@@ -12,13 +12,13 @@ logger = logging.getLogger(__name__)
 class GoogleScholar:
     """Client for Google Scholar search API using SerpAPI."""
     
-    def __init__(self, api_key=None, timeout=30, max_retries=3, base_delay=1.0):
+    def __init__(self, api_key=None, timeout=30, max_retries=1, base_delay=1.0):
         """Initialize the Google Scholar API client.
         
         Args:
             api_key: SerpAPI key (optional, will use SERPAPI_KEY from env if not provided)
             timeout: Request timeout in seconds
-            max_retries: Maximum number of retry attempts
+            max_retries: Maximum number of retry attempts (default: 1)
             base_delay: Base delay between retries in seconds
         """
         self.api_key = api_key or os.getenv("SERPAPI_KEY", "")

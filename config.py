@@ -42,11 +42,11 @@ PORT = int(os.environ.get("PORT", 5000))
 HOST = os.environ.get("HOST", "0.0.0.0")
 
 # API request configuration
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", 60))  # Timeout in seconds
+REQUEST_TIMEOUT = 180  # Increased timeout for longer API requests
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", 3))
 BASE_DELAY = float(os.getenv("BASE_DELAY", 1.0))  # Base delay for retries in seconds
 
 # Additional configuration
 APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "default_secret_key_change_this")
 DATABASE_URI = os.getenv("DATABASE_URI", "sqlite:///paper_projects.db")
-MAX_TOKENS = int(os.getenv("MAX_TOKENS", 4000))  # 生成的最大令牌数（对于API调用） 
+MAX_TOKENS = 8000  # Increased token limit for larger responses 

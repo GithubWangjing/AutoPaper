@@ -83,71 +83,225 @@ class WritingAgent(BaseAgent):
         methodologies_text = "\n".join([f"- {method}" for method in methodologies])
         research_gaps_text = "\n".join([f"- {gap}" for gap in research_gaps])
         
-        # Create a comprehensive prompt for the language model with improved paper structure
-        prompt = [
-            {"role": "system", "content": f"""You are an expert academic writer specializing in creating professionally formatted research papers. 
-            Create a complete academic paper on the topic '{topic}' using the provided research materials.
+        # Break down paper generation into sections to avoid token limits
+        paper_sections = {}
+        
+        # 1. Generate title and abstract
+        logger.info("Generating title and abstract")
+        title_abstract_prompt = [
+            {"role": "system", "content": f"You are an expert academic writer. Create a title and abstract for a paper on '{topic}' based on the provided research."},
+            {"role": "user", "content": f"""Create a title and abstract for an academic paper on "{topic}".
             
-            Format the paper using proper academic structure with these sections:
-            1. Title: Should be centered, bold, and descriptive
-            2. Abstract: A concise summary of the paper (150-250 words)
-            3. Introduction: Background, significance, research questions
-            4. Literature Review: Analysis of existing research
-            5. Methodology: Approaches used in the field
-            6. Results and Discussion: Key findings and their implications
-            7. Future Research Directions: Gaps and opportunities
-            8. Conclusion: Summary of contributions
-            9. References: Properly formatted citations
+Summary of research: {summary[:1000]}
+Key findings: {key_findings_text[:500]}
             
-            Use academic language, maintain logical flow between sections, and ensure proper citation of sources."""},
-            
-            {"role": "user", "content": f"""Please write a comprehensive academic paper on the topic "{topic}" following proper academic formatting and structure.
+Format your response as:
+# [Title]
 
-Here is the research material to incorporate:
-
-SUMMARY OF RESEARCH:
-{summary}
-
-KEY FINDINGS FROM LITERATURE:
-{key_findings_text}
-
-METHODOLOGIES IDENTIFIED:
-{methodologies_text}
-
-RESEARCH GAPS:
-{research_gaps_text}
-
-REFERENCES TO CITE:
-{references_text}
-
-Please format the paper with clear section headers (# for main headers, ## for subheaders) and include:
-1. A descriptive title
-2. An informative abstract
-3. A comprehensive introduction setting the context
-4. A thorough literature review section analyzing existing research
-5. A methodology section describing research approaches
-6. Results and discussion of key findings
-7. Future research directions based on identified gaps
-8. A conclusion summarizing the paper's contributions
-9. Properly formatted references section
-
-The paper should be scholarly in tone, use appropriate academic terminology, and maintain logical flow between sections.
+## Abstract
+[Abstract text, 150-250 words]
 """}
         ]
         
-        # Call the language model API
+        self.progress = 10
+        title_and_abstract = self._make_api_call(title_abstract_prompt)
+        if not title_and_abstract or title_and_abstract.startswith("API"):
+            logger.error(f"Failed to generate title and abstract: {title_and_abstract}")
+            raise Exception("Failed to generate title and abstract")
+        
+        paper_sections["title_abstract"] = title_and_abstract
+        
+        # 2. Generate introduction
+        logger.info("Generating introduction")
+        intro_prompt = [
+            {"role": "system", "content": "You are an expert academic writer. Create an introduction section for a research paper."},
+            {"role": "user", "content": f"""Write an introduction section for an academic paper on "{topic}".
+            
+Summary of research: {summary[:1000]}
+Key findings: {key_findings_text[:500]}
+            
+The introduction should include:
+1. Background context
+2. Significance of the research
+3. Research objectives
+4. Structure of the paper
+
+Format your response as:
+## Introduction
+[Introduction text]
+"""}
+        ]
+        
+        self.progress = 20
+        introduction = self._make_api_call(intro_prompt)
+        if not introduction or introduction.startswith("API"):
+            logger.error(f"Failed to generate introduction: {introduction}")
+            raise Exception("Failed to generate introduction")
+        
+        paper_sections["introduction"] = introduction
+        
+        # 3. Generate literature review
+        logger.info("Generating literature review")
+        lit_review_prompt = [
+            {"role": "system", "content": "You are an expert academic writer. Create a literature review section for a research paper."},
+            {"role": "user", "content": f"""Write a literature review section for an academic paper on "{topic}".
+            
+Summary of research: {summary}
+Key findings: {key_findings_text}
+References to cite:
+{references_text[:1000]}
+            
+The literature review should:
+1. Analyze existing research
+2. Identify trends and patterns
+3. Evaluate methodological approaches
+4. Identify gaps in the literature
+
+Format your response as:
+## Literature Review
+[Literature review text]
+"""}
+        ]
+        
+        self.progress = 30
+        literature_review = self._make_api_call(lit_review_prompt)
+        if not literature_review or literature_review.startswith("API"):
+            logger.error(f"Failed to generate literature review: {literature_review}")
+            raise Exception("Failed to generate literature review")
+        
+        paper_sections["literature_review"] = literature_review
+        
+        # 4. Generate methodology
+        logger.info("Generating methodology section")
+        method_prompt = [
+            {"role": "system", "content": "You are an expert academic writer. Create a methodology section for a research paper."},
+            {"role": "user", "content": f"""Write a methodology section for an academic paper on "{topic}".
+            
+Methodologies identified: {methodologies_text}
+            
+The methodology section should:
+1. Describe the research approach
+2. Explain data collection methods
+3. Outline analytical frameworks
+4. Address limitations
+
+Format your response as:
+## Methodology
+[Methodology text]
+"""}
+        ]
+        
+        self.progress = 40
+        methodology = self._make_api_call(method_prompt)
+        if not methodology or methodology.startswith("API"):
+            logger.error(f"Failed to generate methodology: {methodology}")
+            raise Exception("Failed to generate methodology")
+        
+        paper_sections["methodology"] = methodology
+        
+        # 5. Generate results and discussion
+        logger.info("Generating results and discussion")
+        results_prompt = [
+            {"role": "system", "content": "You are an expert academic writer. Create a results and discussion section for a research paper."},
+            {"role": "user", "content": f"""Write a results and discussion section for an academic paper on "{topic}".
+            
+Key findings: {key_findings_text}
+Summary of research: {summary[:800]}
+            
+The results and discussion should:
+1. Present key findings
+2. Analyze and interpret results
+3. Compare with existing literature
+4. Discuss implications
+
+Format your response as:
+## Results and Discussion
+[Results and discussion text]
+"""}
+        ]
+        
         self.progress = 50
-        logger.info("Calling language model API for paper generation")
-        paper_content = self._make_api_call(prompt)
+        results_discussion = self._make_api_call(results_prompt)
+        if not results_discussion or results_discussion.startswith("API"):
+            logger.error(f"Failed to generate results and discussion: {results_discussion}")
+            raise Exception("Failed to generate results and discussion")
         
-        # Check if the API call failed
-        if not paper_content or paper_content.startswith("API"):
-            logger.error(f"API call failed: {paper_content}")
-            raise Exception(f"Language model API call failed: {paper_content}")
+        paper_sections["results_discussion"] = results_discussion
         
-        # Add formatting improvements if needed
-        if not paper_content.startswith('# '):
-            paper_content = f"# {topic}: A Comprehensive Review\n\n{paper_content}"
+        # 6. Generate future research directions
+        logger.info("Generating future research directions")
+        future_prompt = [
+            {"role": "system", "content": "You are an expert academic writer. Create a future research directions section for a research paper."},
+            {"role": "user", "content": f"""Write a future research directions section for an academic paper on "{topic}".
+            
+Research gaps: {research_gaps_text}
+Key findings: {key_findings_text[:500]}
+            
+The future research section should:
+1. Identify gaps in knowledge
+2. Suggest potential research questions
+3. Outline methodological improvements
+4. Discuss potential applications
+
+Format your response as:
+## Future Research Directions
+[Future research text]
+"""}
+        ]
+        
+        self.progress = 60
+        future_research = self._make_api_call(future_prompt)
+        if not future_research or future_research.startswith("API"):
+            logger.error(f"Failed to generate future research directions: {future_research}")
+            raise Exception("Failed to generate future research directions")
+        
+        paper_sections["future_research"] = future_research
+        
+        # 7. Generate conclusion
+        logger.info("Generating conclusion")
+        conclusion_prompt = [
+            {"role": "system", "content": "You are an expert academic writer. Create a conclusion section for a research paper."},
+            {"role": "user", "content": f"""Write a conclusion section for an academic paper on "{topic}".
+            
+Key findings: {key_findings_text[:500]}
+            
+The conclusion should:
+1. Summarize the main findings
+2. Restate the significance of the research
+3. Discuss limitations
+4. End with a strong closing statement
+
+Format your response as:
+## Conclusion
+[Conclusion text]
+"""}
+        ]
+        
+        self.progress = 70
+        conclusion = self._make_api_call(conclusion_prompt)
+        if not conclusion or conclusion.startswith("API"):
+            logger.error(f"Failed to generate conclusion: {conclusion}")
+            raise Exception("Failed to generate conclusion")
+        
+        paper_sections["conclusion"] = conclusion
+        
+        # 8. Format references section
+        logger.info("Formatting references")
+        references_section = "## References\n\n" + "\n".join(references)
+        paper_sections["references"] = references_section
+        
+        # Combine all sections
+        logger.info("Combining all paper sections")
+        paper_content = "\n\n".join([
+            paper_sections["title_abstract"],
+            paper_sections["introduction"],
+            paper_sections["literature_review"],
+            paper_sections["methodology"],
+            paper_sections["results_discussion"],
+            paper_sections["future_research"],
+            paper_sections["conclusion"],
+            paper_sections["references"]
+        ])
         
         self.progress = 100
         return paper_content

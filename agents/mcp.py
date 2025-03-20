@@ -98,21 +98,26 @@ class MCP:
             raise ValueError("OpenAI client not initialized")
         return self.client.chat.completions
         
-    def search_papers(self, query, max_results=10):
+    def search_papers(self, query, max_results=10, timeout=None):
         """Search for academic papers using Google Scholar.
         
         Args:
             query: Search query string
             max_results: Maximum number of results to return
+            timeout: Custom timeout for the search request (overrides default)
             
         Returns:
             Dictionary containing search results
         """
         try:
+            # Apply timeout if provided
+            search_timeout = timeout or self.timeout
+            
             # First try using the scholarly library (no API key needed)
             if self.scholarly_google:
                 try:
-                    logger.info("Trying to search papers using scholarly (no API key required)")
+                    logger.info(f"Trying to search papers using scholarly with timeout={search_timeout}s")
+                    # Note: scholarly doesn't support timeout parameter, so we can't pass it
                     results = self.scholarly_google.search(query, max_results=max_results)
                     if results.get('papers'):
                         return results
@@ -123,7 +128,9 @@ class MCP:
             
             # If scholarly fails and we have an API key, try using SerpAPI
             if self.google_scholar:
-                logger.info("Trying to search papers using SerpAPI")
+                logger.info(f"Trying to search papers using SerpAPI with timeout={search_timeout}s")
+                # Override the timeout for faster failure
+                self.google_scholar.timeout = search_timeout
                 results = self.google_scholar.search(query, max_results=max_results)
                 return results
             else:

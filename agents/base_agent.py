@@ -5,6 +5,16 @@ import requests
 from abc import ABC, abstractmethod
 from dotenv import load_dotenv
 from openai import OpenAI
+import sys
+import time
+from pathlib import Path
+
+# Add parent directory to sys.path
+current_dir = Path(__file__).resolve().parent
+parent_dir = current_dir.parent
+sys.path.append(str(parent_dir))
+
+import config
 
 # Load .env file if it exists
 load_dotenv()
@@ -77,8 +87,8 @@ class BaseAgent(ABC):
         if not hasattr(self, 'temperature'):
             self.temperature = float(os.getenv("DEFAULT_TEMPERATURE", 0.7))
         if not hasattr(self, 'max_tokens'):
-            self.max_tokens = int(os.getenv("MAX_TOKENS", 2000))
-        self.timeout = int(os.getenv("REQUEST_TIMEOUT", 60))
+            self.max_tokens = int(os.getenv("MAX_TOKENS", config.MAX_TOKENS))
+        self.timeout = config.REQUEST_TIMEOUT  # Use timeout from config
         
         logger.info(f"Initialized {self.__class__.__name__} with model type {self.model_type}, model {self.model}")
 
@@ -86,8 +96,8 @@ class BaseAgent(ABC):
         """Make an API call to the AI model with retry mechanism."""
         logger.info(f"Making API call to {self.model_type} with {len(messages)} messages")
         
-        max_retries = 3
-        retry_delay = 5  # seconds
+        max_retries = config.MAX_RETRIES
+        base_delay = config.BASE_DELAY
         
         for retry_count in range(max_retries):
             try:
@@ -198,9 +208,8 @@ class BaseAgent(ABC):
                 
                 # If we're not on the last retry, wait and try again
                 if retry_count < max_retries - 1:
-                    wait_time = retry_delay * (retry_count + 1)  # Exponential backoff
+                    wait_time = base_delay * (retry_count + 1)  # Exponential backoff
                     logger.info(f"Retrying in {wait_time} seconds... (Attempt {retry_count + 1}/{max_retries})")
-                    import time
                     time.sleep(wait_time)
                     continue
                 else:
@@ -245,9 +254,8 @@ class BaseAgent(ABC):
                 
                 # If we're not on the last retry, wait and try again
                 if retry_count < max_retries - 1:
-                    wait_time = retry_delay * (retry_count + 1)  # Exponential backoff
+                    wait_time = base_delay * (retry_count + 1)  # Exponential backoff
                     logger.info(f"Retrying in {wait_time} seconds... (Attempt {retry_count + 1}/{max_retries})")
-                    import time
                     time.sleep(wait_time)
                     continue
                 else:
@@ -262,9 +270,8 @@ class BaseAgent(ABC):
                 
                 # If we're not on the last retry, wait and try again
                 if retry_count < max_retries - 1:
-                    wait_time = retry_delay * (retry_count + 1)  # Exponential backoff
+                    wait_time = base_delay * (retry_count + 1)  # Exponential backoff
                     logger.info(f"Retrying in {wait_time} seconds... (Attempt {retry_count + 1}/{max_retries})")
-                    import time
                     time.sleep(wait_time)
                     continue
                 else:

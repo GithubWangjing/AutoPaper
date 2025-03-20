@@ -956,6 +956,14 @@
             interactiveMultiAgentBtn.addEventListener('click', function() {
                 // Switch to the agents tab
                 document.querySelector('[data-tab="agents"]').click();
+                
+                // Wait a short time for the tab to show, then trigger the startMultiAgentBtn
+                setTimeout(() => {
+                    const startMultiAgentBtn = document.getElementById('startMultiAgentBtn');
+                    if (startMultiAgentBtn) {
+                        startMultiAgentBtn.click();
+                    }
+                }, 100);
             });
         }
         
@@ -970,12 +978,211 @@
             });
         }
         
-        // When MathJax is fully loaded, typeset the document
-        setTimeout(function() {
-            if (typeof window.MathJax !== 'undefined' && window.MathJax.Hub) {
-                window.MathJax.Hub.Queue(["Typeset", window.MathJax.Hub]);
+        // Start Multi-Agent Button
+        const startMultiAgentBtn = document.getElementById('startMultiAgentBtn');
+        if (startMultiAgentBtn) {
+            startMultiAgentBtn.addEventListener('click', function() {
+                if (confirm('Start the interactive multi-agent process? This will run research, writing, and review in sequence.')) {
+                    // Disable the button to prevent multiple clicks
+                    startMultiAgentBtn.disabled = true;
+                    startMultiAgentBtn.innerHTML = '<span class="inline-block animate-spin mr-2">⟳</span> Starting...';
+                    
+                    // Update agent statuses
+                    document.querySelectorAll('.agent-status-value').forEach(status => {
+                        status.textContent = 'Initializing...';
+                    });
+                    
+                    // Call the API to start the multi-agent process
+                    fetch(`/api/projects/${projectId}/start-multi-agent`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Multi-agent process started:', data);
+                        
+                        // Start polling for agent updates
+                        startAgentStatusPolling();
+                        
+                        // Update button state
+                        startMultiAgentBtn.innerHTML = 'Process Running...';
+                    })
+                    .catch(error => {
+                        console.error('Error starting multi-agent process:', error);
+                        alert('Error starting multi-agent process. Please check the console for details.');
+                        startMultiAgentBtn.disabled = false;
+                        startMultiAgentBtn.innerHTML = 'Start Interactive Multi-Agent';
+                    });
+                }
+            });
+        }
+        
+        // Function to poll for agent status updates
+        function startAgentStatusPolling() {
+            // Poll for multi-agent logs
+            setInterval(() => {
+                fetch(`/api/projects/${projectId}/multi_agent_logs`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const logs = data.logs || [];
+                        const multiAgentLogs = document.getElementById('multiAgentLogs');
+                        
+                        if (multiAgentLogs) {
+                            // Clear existing logs
+                            multiAgentLogs.innerHTML = '';
+                            
+                            // Add all logs
+                            logs.forEach(log => {
+                                const logEntry = document.createElement('div');
+                                logEntry.className = 'log-entry mb-1';
+                                logEntry.innerHTML = `<span class="text-gray-500">[${log.timestamp}]</span> <span class="text-blue-600">${log.agent_type}:</span> ${log.activity}`;
+                                multiAgentLogs.appendChild(logEntry);
+                            });
+                            
+                            // Scroll to bottom
+                            multiAgentLogs.scrollTop = multiAgentLogs.scrollHeight;
+                            
+                            // Update agent statuses based on logs
+                            updateAgentStatuses(logs);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching multi-agent logs:', error);
+                    });
+            }, 3000);
+        }
+        
+        // Function to update agent statuses based on logs
+        function updateAgentStatuses(logs) {
+            if (!logs || logs.length === 0) return;
+            
+            // Get the latest log entry for each agent
+            const agentTypes = ['research', 'writing', 'review'];
+            const latestLogs = {};
+            
+            // Find the most recent log for each agent
+            for (let i = logs.length - 1; i >= 0; i--) {
+                const log = logs[i];
+                if (agentTypes.includes(log.agent_type) && !latestLogs[log.agent_type]) {
+                    latestLogs[log.agent_type] = log;
+                }
             }
-        }, 500);
+            
+            // Update the status display for each agent
+            agentTypes.forEach(agentType => {
+                const statusEl = document.querySelector(`#agent-${agentType} .agent-status-value`);
+                const taskEl = document.querySelector(`#agent-${agentType} .agent-current-task`);
+                
+                if (statusEl && latestLogs[agentType]) {
+                    // Determine status based on activity content
+                    let status = "Working";
+                    if (latestLogs[agentType].activity.includes("完成") || 
+                        latestLogs[agentType].activity.includes("completed")) {
+                        status = "Completed";
+                        statusEl.classList.add("text-green-600", "font-bold");
+                    } else if (latestLogs[agentType].activity.includes("错误") || 
+                               latestLogs[agentType].activity.includes("error")) {
+                        status = "Error";
+                        statusEl.classList.add("text-red-600", "font-bold");
+                    } else {
+                        statusEl.classList.add("text-blue-600");
+                    }
+                    
+                    statusEl.textContent = status;
+                    
+                    // Update the current task description
+                    if (taskEl) {
+                        taskEl.textContent = latestLogs[agentType].activity;
+                    }
+                }
+            });
+            
+            // Check if the process is complete
+            const isComplete = logs.some(log => 
+                log.agent_type === 'system' && 
+                (log.activity.includes("完成") || log.activity.includes("completed"))
+            );
+            
+            if (isComplete && startMultiAgentBtn) {
+                startMultiAgentBtn.disabled = true;
+                startMultiAgentBtn.innerHTML = 'Process Completed';
+                startMultiAgentBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+                startMultiAgentBtn.classList.add('bg-green-600');
+                
+                // Show a notification
+                alert('Multi-agent process completed! Refresh the page to see the results.');
+            }
+        }
+        
+        // Load and display project logs
+        const logsContainer = document.getElementById('logs-container');
+        let lastTimestamp = '';
+        
+        function fetchLogs() {
+            const url = lastTimestamp 
+                ? `/api/projects/${projectId}/logs?since=${encodeURIComponent(lastTimestamp)}` 
+                : `/api/projects/${projectId}/logs`;
+                
+            fetch(url)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(logs => {
+                    if (logs.length > 0) {
+                        // Clear the 'Loading logs...' message if it's the first load
+                        if (!lastTimestamp) {
+                            logsContainer.innerHTML = '';
+                        }
+                        
+                        // Keep track of last timestamp
+                        lastTimestamp = logs[logs.length - 1].timestamp;
+                        
+                        // Add new logs to the container
+                        logs.forEach(log => {
+                            const logEntry = document.createElement('div');
+                            logEntry.className = `log-entry ${log.activity.toLowerCase().includes('error') ? 'error' : ''}`;
+                            
+                            const timestamp = new Date(log.timestamp).toLocaleTimeString();
+                            
+                            logEntry.innerHTML = `
+                                <span class="log-timestamp">[${timestamp}]</span>
+                                <span class="log-agent">${log.agent_type}:</span>
+                                <span class="log-message">${log.activity}</span>
+                            `;
+                            
+                            logsContainer.appendChild(logEntry);
+                        });
+                        
+                        // Scroll to bottom
+                        logsContainer.scrollTop = logsContainer.scrollHeight;
+                    } else if (!lastTimestamp) {
+                        // If this is the first load and no logs were found
+                        logsContainer.innerHTML = '<div class="text-center text-gray-400 py-4">No logs available</div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching logs:', error);
+                    if (!lastTimestamp) {
+                        logsContainer.innerHTML = '<div class="text-center text-red-400 py-4">Error loading logs</div>';
+                    }
+                });
+        }
+        
+        // Initial fetch
+        fetchLogs();
+        
+        // Set up polling for new logs every 5 seconds
+        setInterval(fetchLogs, 5000);
     });
     </script>
 </body>

@@ -95,11 +95,12 @@ class ResearchAgent(BaseAgent):
                             failed_sources["arxiv"] = error_message or "No papers found"
                     
                     elif source == "google_scholar":
-                        # Try to get papers from Google Scholar with retries
-                        for attempt in range(self.max_retry_attempts):
+                        # Try to get papers from Google Scholar with minimal retries
+                        # Google Scholar is often difficult to connect to, so we give up quickly
+                        for attempt in range(1):  # Only try once instead of multiple retries
                             try:
                                 # Use the MCP client which will try scholarly first, then SerpAPI if available
-                                search_results = self.mcp_client.search_papers(topic, max_results=10)
+                                search_results = self.mcp_client.search_papers(topic, max_results=10, timeout=15)  # Shorter timeout
                                 scholar_papers = search_results.get('papers', [])
                                 if scholar_papers:
                                     logger.info(f"Successfully retrieved {len(scholar_papers)} papers from Google Scholar")
@@ -108,12 +109,12 @@ class ResearchAgent(BaseAgent):
                                     successful_sources.append("google_scholar")
                                     break
                                 else:
-                                    logger.warning(f"No papers found in Google Scholar for topic: {topic} (attempt {attempt+1})")
+                                    logger.warning(f"No papers found in Google Scholar for topic: {topic}")
                             except Exception as e:
                                 error_message = str(e)
-                                logger.error(f"Error retrieving papers from Google Scholar (attempt {attempt+1}): {error_message}")
+                                logger.error(f"Error retrieving papers from Google Scholar: {error_message}")
                                 logger.error(traceback.format_exc())
-                                time.sleep(self.retry_delay)  # Wait before retry
+                                # Don't retry - Google Scholar is unreliable
                                 
                         if not papers:
                             failed_sources["google_scholar"] = error_message or "No papers found"
