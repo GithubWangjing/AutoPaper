@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Academic Agent Suite</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+        }
+        .progress-bar {
+            transition: width 0.3s ease-in-out;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: all 0.3s;
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+        }
+        
+        /* Added styles for notifications */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            background: #4CAF50;
+            color: white;
+            border-radius: 5px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 1000;
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: opacity 0.3s, transform 0.3s;
+        }
+        
+        .notification.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .notification.error {
+            background: #F44336;
+        }
+    </style>
+</head>
+<body>
+    <!-- Notification Container -->
+    <div id="notificationContainer"></div>
+    
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="gradient-bg text-white py-6">
+            <div class="container mx-auto px-4">
+                <h1 class="text-3xl font-bold text-center">Academic Agent Suite</h1>
+                <p class="text-center mt-2 text-gray-200">Your AI-powered research assistant</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="container mx-auto px-4 py-8">
+            <!-- Project Creation -->
+            <div class="card p-6 mb-8">
+                <h2 class="text-2xl font-semibold mb-4">Create New Project</h2>
+                <form id="projectForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Project Title</label>
+                        <input type="text" id="projectTitle" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent" required>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Model Type</label>
+                            <select id="modelType" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                                <option value="openai">OpenAI</option>
+                                <option value="siliconflow" selected>SiliconFlow</option>
+                                <option value="anthropic">Anthropic Claude</option>
+                                <option value="gemini">Google Gemini</option>
+                                <option value="glm">ChatGLM</option>
+                                <option value="qwen">阿里Qwen</option>
+                                <option value="zhipu">智谱AI</option>
+                                <option value="baidu">百度文心</option>
+                                <option value="custom">自定义模型</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Research Source</label>
+                            <select id="researchSource" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                                <option value="none">None</option>
+                                <option value="arxiv">ArXiv</option>
+                                <option value="google_scholar">Google Scholar</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- 自定义模型配置 -->
+                    <div id="customModelConfig" class="hidden mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <h3 class="text-sm font-semibold text-gray-700 mb-3">自定义模型配置</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">API 端点</label>
+                                <input type="text" id="customModelEndpoint" placeholder="https://api.example.com/v1/chat/completions" 
+                                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">API 密钥</label>
+                                <input type="password" id="customModelApiKey" placeholder="sk-..." 
+                                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">模型名称</label>
+                            <input type="text" id="customModelName" placeholder="gpt-4-1106-preview" 
+                                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Temperature</label>
+                                <input type="range" id="customModelTemperature" min="0" max="1" step="0.1" value="0.7" 
+                                    class="w-full">
+                                <div class="text-right text-xs text-gray-500" id="tempValue">0.7</div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Max Tokens</label>
+                                <input type="number" id="customModelMaxTokens" value="2000" min="100" max="8000" 
+                                    class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn-primary text-white px-6 py-2 rounded-lg w-full mt-4">
+                        Create Project
+                    </button>
+                </form>
+            </div>
+
+            <!-- Projects List -->
+            <div class="card p-6">
+                <h2 class="text-2xl font-semibold mb-4">Your Projects</h2>
+                <div id="projectsList" class="space-y-4">
+                    <!-- Projects will be dynamically added here -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Project Template -->
+    <template id="projectTemplate">
+        <div class="card p-4">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h3 class="text-lg font-semibold"></h3>
+                    <p class="text-sm text-gray-600 mt-1"></p>
+                </div>
+                <div class="flex space-x-2">
+                    <button class="btn-primary text-white px-4 py-1 rounded text-sm">Start Research</button>
+                    <button class="btn-primary text-white px-4 py-1 rounded text-sm">Write Paper</button>
+                    <button class="btn-primary text-white px-4 py-1 rounded text-sm">Review</button>
+                </div>
+            </div>
+            <div class="mt-4">
+                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                    <div class="progress-bar bg-purple-600 h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+                <p class="text-sm text-gray-600 mt-2 text-center"></p>
+            </div>
+        </div>
+    </template>
+
+    <script>
+        // Enable console debugging
+        const DEBUG = true;
+        
+        function logDebug(message, data) {
+            if (DEBUG) {
+                console.log(`[Debug] ${message}`, data || '');
+            }
+        }
+        
+        // Show notification function
+        function showNotification(message, isError = false) {
+            const container = document.getElementById('notificationContainer');
+            const notification = document.createElement('div');
+            notification.className = `notification ${isError ? 'error' : ''}`;
+            notification.textContent = message;
+            
+            container.appendChild(notification);
+            
+            // Force reflow to enable transition
+            notification.offsetHeight;
+            
+            // Show notification
+            notification.classList.add('show');
+            
+            // Remove notification after 5 seconds
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => {
+                    container.removeChild(notification);
+                }, 300);
+            }, 5000);
+        }
+
+        // 处理自定义模型配置的显示/隐藏
+        document.getElementById('modelType').addEventListener('change', function() {
+            const customModelConfig = document.getElementById('customModelConfig');
+            if (this.value === 'custom') {
+                customModelConfig.classList.remove('hidden');
+            } else {
+                customModelConfig.classList.add('hidden');
+            }
+        });
+        
+        // 处理Temperature滑块的值显示
+        document.getElementById('customModelTemperature').addEventListener('input', function() {
+            document.getElementById('tempValue').textContent = this.value;
+        });
+
+        // Project creation
+        document.getElementById('projectForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const title = document.getElementById('projectTitle').value;
+            const modelType = document.getElementById('modelType').value;
+            const researchSource = document.getElementById('researchSource').value;
+
+            // 收集自定义模型配置数据
+            let customModelData = null;
+            if (modelType === 'custom') {
+                customModelData = {
+                    endpoint: document.getElementById('customModelEndpoint').value,
+                    api_key: document.getElementById('customModelApiKey').value,
+                    model_name: document.getElementById('customModelName').value,
+                    temperature: document.getElementById('customModelTemperature').value,
+                    max_tokens: document.getElementById('customModelMaxTokens').value
+                };
+            }
+
+            logDebug('Creating project with:', { title, modelType, researchSource, customModelData });
+            
+            // Show immediate visual feedback
+            document.getElementById('projectForm').classList.add('opacity-50');
+            showNotification('Creating project...');
+
+            try {
+                const requestData = { 
+                    title, 
+                    model_type: modelType, 
+                    research_source: researchSource 
+                };
+                
+                // 如果有自定义模型数据，添加到请求
+                if (customModelData) {
+                    requestData.custom_model = customModelData;
+                }
+                
+                const response = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData),
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    logDebug('Project created successfully:', data);
+                    showNotification('Project created successfully!');
+                    document.getElementById('projectForm').reset();
+                    
+                    // Redirect to project detail page
+                    window.location.href = `/projects/${data.id}`;
+                } else {
+                    logDebug('Error creating project:', data);
+                    showNotification('Error: ' + (data.error || 'Could not create project'), true);
+                }
+            } catch (error) {
+                console.error('Error creating project:', error);
+                showNotification('Error: Could not communicate with server', true);
+            } finally {
+                document.getElementById('projectForm').classList.remove('opacity-50');
+            }
+        });
+
+        // Load projects
+        async function loadProjects() {
+            logDebug('Loading projects...');
+            try {
+                const response = await fetch('/api/projects');
+                logDebug('Projects load response status:', response.status);
+                
+                if (response.ok) {
+                    const projects = await response.json();
+                    logDebug('Projects loaded:', projects);
+                    
+                    // Clear existing projects first
+                    document.getElementById('projectsList').innerHTML = '';
+                    
+                    if (projects.length === 0) {
+                        document.getElementById('projectsList').innerHTML = 
+                            '<div class="text-center text-gray-500 py-8">No projects yet. Create your first project above!</div>';
+                    } else {
+                        projects.forEach(addProjectToList);
+                        showNotification(`Loaded ${projects.length} projects`);
+                    }
+                } else {
+                    console.error('Failed to load projects');
+                    showNotification('Failed to load projects', true);
+                }
+            } catch (error) {
+                console.error('Error loading projects:', error);
+                showNotification('Error loading projects: ' + error.message, true);
+            }
+        }
+
+        // Add project to list
+        function addProjectToList(project) {
+            logDebug('Adding project to list:', project);
+            const template = document.getElementById('projectTemplate');
+            const clone = template.content.cloneNode(true);
+            
+            // 添加点击整个项目卡片的事件，导航到项目详情页
+            const projectCard = clone.querySelector('.card');
+            projectCard.dataset.projectId = project.id;
+            projectCard.style.cursor = 'pointer';
+            projectCard.addEventListener('click', (e) => {
+                // 如果点击的是按钮，不要导航（让按钮自己处理）
+                if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+                    return;
+                }
+                // 否则导航到项目详情页
+                window.location.href = `/projects/${project.id}`;
+            });
+            
+            // 使项目标题明显可点击
+            const projectTitle = clone.querySelector('h3');
+            projectTitle.textContent = project.topic;
+            projectTitle.style.color = '#4F46E5'; // 添加颜色
+            projectTitle.style.cursor = 'pointer'; // 添加指针样式
+            
+            clone.querySelector('p').textContent = `${project.model_type} | ${project.research_source}`;
+            
+            const progressBar = clone.querySelector('.progress-bar');
+            const statusText = clone.querySelector('p:last-child');
+            
+            // Update progress based on status
+            switch(project.status) {
+                case 'created':
+                    progressBar.style.width = '0%';
+                    statusText.textContent = 'Project Created';
+                    break;
+                case 'researching':
+                    progressBar.style.width = '33%';
+                    statusText.textContent = 'Researching...';
+                    break;
+                case 'writing':
+                    progressBar.style.width = '66%';
+                    statusText.textContent = 'Writing Paper...';
+                    break;
+                case 'reviewing':
+                    progressBar.style.width = '90%';
+                    statusText.textContent = 'Reviewing...';
+                    break;
+                case 'completed':
+                    progressBar.style.width = '100%';
+                    statusText.textContent = 'Completed';
+                    break;
+                default:
+                    progressBar.style.width = '0%';
+                    statusText.textContent = `Status: ${project.status}`;
+            }
+            
+            // Set up action buttons with explicit logging
+            const researchBtn = clone.querySelector('.btn-primary:nth-child(1)');
+            const writeBtn = clone.querySelector('.btn-primary:nth-child(2)');
+            const reviewBtn = clone.querySelector('.btn-primary:nth-child(3)');
+            
+            // Make buttons more visible
+            researchBtn.innerHTML = `<span class="inline-block animate-pulse">📊</span> Start Research`;
+            writeBtn.innerHTML = `<span class="inline-block animate-pulse">📝</span> Write Paper`;
+            reviewBtn.innerHTML = `<span class="inline-block animate-pulse">🔍</span> Review`;
+            
+            researchBtn.addEventListener('click', function() {
+                logDebug(`Research button clicked for project ${project.id}`);
+                // Visual feedback on click
+                this.classList.add('opacity-50');
+                this.innerHTML = '⏳ Starting Research...';
+                startProjectPhase(project.id, 'research', this);
+            });
+            
+            writeBtn.addEventListener('click', function() {
+                logDebug(`Write button clicked for project ${project.id}`);
+                // Visual feedback on click
+                this.classList.add('opacity-50');
+                this.innerHTML = '⏳ Starting Writing...';
+                startProjectPhase(project.id, 'writing', this);
+            });
+            
+            reviewBtn.addEventListener('click', function() {
+                logDebug(`Review button clicked for project ${project.id}`);
+                // Visual feedback on click
+                this.classList.add('opacity-50');
+                this.innerHTML = '⏳ Starting Review...';
+                startProjectPhase(project.id, 'review', this);
+            });
+            
+            document.getElementById('projectsList').appendChild(clone);
+            logDebug('Project added to DOM');
+        }
+        
+        // Start a project phase (research, writing, or review)
+        async function startProjectPhase(projectId, phase, buttonElement) {
+            logDebug(`Starting ${phase} phase for project ${projectId}`);
+            
+            try {
+                const endpoint = `/api/projects/${projectId}/start-${phase}`;
+                logDebug(`Calling API endpoint: ${endpoint}`);
+                
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({}) // Send empty body
+                });
+                
+                logDebug(`API response status: ${response.status}`);
+                
+                if (response.ok) {
+                    const responseData = await response.json();
+                    logDebug('Phase start successful:', responseData);
+                    
+                    // Display success notification
+                    showNotification(`${phase.charAt(0).toUpperCase() + phase.slice(1)} phase started successfully!`);
+                    
+                    // Refresh the project status
+                    refreshProjectStatus(projectId);
+                } else {
+                    // Reset button
+                    if (buttonElement) {
+                        buttonElement.classList.remove('opacity-50');
+                        buttonElement.innerHTML = getOriginalButtonText(phase);
+                    }
+                    
+                    const errorData = await response.json();
+                    console.error(`Failed to start ${phase}:`, errorData);
+                    showNotification(`Failed to start ${phase}: ${errorData.error || 'Unknown error'}`, true);
+                }
+            } catch (error) {
+                // Reset button
+                if (buttonElement) {
+                    buttonElement.classList.remove('opacity-50');
+                    buttonElement.innerHTML = getOriginalButtonText(phase);
+                }
+                
+                console.error(`Error starting ${phase}:`, error);
+                showNotification(`Error starting ${phase}: ${error.message}`, true);
+            }
+        }
+        
+        // Helper function to get original button text
+        function getOriginalButtonText(phase) {
+            switch(phase) {
+                case 'research':
+                    return `<span class="inline-block animate-pulse">📊</span> Start Research`;
+                case 'writing':
+                    return `<span class="inline-block animate-pulse">📝</span> Write Paper`;
+                case 'review':
+                    return `<span class="inline-block animate-pulse">🔍</span> Review`;
+                default:
+                    return phase;
+            }
+        }
+        
+        // Refresh a single project's status
+        async function refreshProjectStatus(projectId) {
+            logDebug(`Refreshing status for project ${projectId}`);
+            
+            try {
+                const projectResponse = await fetch(`/api/projects/${projectId}`);
+                logDebug(`Project refresh status: ${projectResponse.status}`);
+                
+                if (projectResponse.ok) {
+                    const project = await projectResponse.json();
+                    logDebug('Project data:', project);
+                    
+                    // Find the project card and update its status
+                    const projectCard = document.querySelector(`.card[data-project-id="${projectId}"]`);
+                    if (projectCard) {
+                        logDebug('Found project card, updating status');
+                        
+                        const progressBar = projectCard.querySelector('.progress-bar');
+                        const statusText = projectCard.querySelector('p:last-child');
+                        
+                        // Reset buttons
+                        const researchBtn = projectCard.querySelector('.btn-primary:nth-child(1)');
+                        const writeBtn = projectCard.querySelector('.btn-primary:nth-child(2)');
+                        const reviewBtn = projectCard.querySelector('.btn-primary:nth-child(3)');
+                        
+                        researchBtn.classList.remove('opacity-50');
+                        writeBtn.classList.remove('opacity-50');
+                        reviewBtn.classList.remove('opacity-50');
+                        
+                        researchBtn.innerHTML = `<span class="inline-block animate-pulse">📊</span> Start Research`;
+                        writeBtn.innerHTML = `<span class="inline-block animate-pulse">📝</span> Write Paper`;
+                        reviewBtn.innerHTML = `<span class="inline-block animate-pulse">🔍</span> Review`;
+                        
+                        // Update progress based on status
+                        switch(project.status) {
+                            case 'created':
+                                progressBar.style.width = '0%';
+                                statusText.textContent = 'Project Created';
+                                break;
+                            case 'researching':
+                                progressBar.style.width = '33%';
+                                statusText.textContent = 'Researching...';
+                                // Visual indicator for active phase
+                                researchBtn.classList.add('bg-green-500');
+                                researchBtn.innerHTML = '🔄 Researching...';
+                                break;
+                            case 'writing':
+                                progressBar.style.width = '66%';
+                                statusText.textContent = 'Writing Paper...';
+                                // Visual indicator for active phase
+                                writeBtn.classList.add('bg-green-500');
+                                writeBtn.innerHTML = '🔄 Writing...';
+                                break;
+                            case 'reviewing':
+                                progressBar.style.width = '90%';
+                                statusText.textContent = 'Reviewing...';
+                                // Visual indicator for active phase
+                                reviewBtn.classList.add('bg-green-500');
+                                reviewBtn.innerHTML = '🔄 Reviewing...';
+                                break;
+                            case 'completed':
+                                progressBar.style.width = '100%';
+                                statusText.textContent = 'Completed';
+                                break;
+                            default:
+                                progressBar.style.width = '0%';
+                                statusText.textContent = `Status: ${project.status}`;
+                        }
+                        
+                        // Create highlight animation
+                        projectCard.style.transition = "all 0.3s";
+                        projectCard.style.boxShadow = "0 0 20px rgba(102, 126, 234, 0.5)";
+                        
+                        // Slight wiggle animation
+                        projectCard.classList.add('animate-bounce');
+                        
+                        // Remove animation after a delay
+                        setTimeout(() => {
+                            projectCard.style.boxShadow = "";
+                            projectCard.classList.remove('animate-bounce');
+                        }, 1000);
+                        
+                        logDebug(`Updated UI to status: ${project.status}`);
+                        // Show notification about status update
+                        showNotification(`Project status updated to: ${project.status}`);
+                    } else {
+                        console.error(`Could not find project card with ID ${projectId}`);
+                        showNotification(`Error: Could not find project card with ID ${projectId}`, true);
+                    }
+                } else {
+                    console.error('Failed to refresh project status');
+                    showNotification('Failed to refresh project status', true);
+                }
+            } catch (error) {
+                console.error('Error refreshing project status:', error);
+                showNotification('Error refreshing project status: ' + error.message, true);
+            }
+        }
+
+        // Periodic refresh of project statuses
+        function startPeriodicRefresh() {
+            // Initial load
+            loadProjects();
+            
+            // Refresh project list every 30 seconds
+            setInterval(() => {
+                logDebug('Performing periodic refresh');
+                loadProjects();
+            }, 30000);
+        }
+
+        // Load projects when page loads
+        window.addEventListener('load', function() {
+            logDebug('Page loaded, starting app');
+            showNotification('Welcome to Academic Agent Suite!');
+            startPeriodicRefresh();
+        });
+    </script>
+</body>
+</html>

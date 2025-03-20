@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project: {{ project.topic }} - Academic Agent Suite</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+        }
+        .progress-bar {
+            transition: width 0.3s ease-in-out;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: all 0.3s;
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+        }
+        
+        /* Added styles for logs display */
+        .log-container {
+            max-height: 300px;
+            overflow-y: auto;
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+            font-family: monospace;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            font-size: 0.875rem;
+        }
+        .log-timestamp {
+            color: #a0a0a0;
+        }
+        .log-agent {
+            color: #4CAF50;
+        }
+        .log-message {
+            color: #ffffff;
+        }
+        .log-entry.error .log-agent {
+            color: #F44336;
+        }
+        .log-entry.warning .log-agent {
+            color: #FFD700;
+        }
+    </style>
+</head>
+<body>
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="gradient-bg text-white py-6">
+            <div class="container mx-auto px-4">
+                <h1 class="text-3xl font-bold text-center">Academic Agent Suite</h1>
+                <p class="text-center mt-2 text-gray-200">Your AI-powered research assistant</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="container mx-auto px-4 py-8">
+            <!-- Project Details Header -->
+            <div class="card p-6 mb-6">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h2 class="text-2xl font-semibold mb-2">{{ project.topic }}</h2>
+                        <p class="text-sm text-gray-600">
+                            Created: {{ project.created_at.strftime('%Y-%m-%d %H:%M') }} | 
+                            Model: {{ project.model_type }}
+                            {% if project.model_type == 'custom' %}
+                             ({{ project.custom_model_name }})
+                            {% endif %} | 
+                            Source: {{ project.research_source }}
+                        </p>
+                        {% if project.model_type == 'custom' %}
+                        <div class="mt-2 text-xs text-gray-500">
+                            <p>Custom Model Settings:</p>
+                            <ul class="list-disc list-inside pl-2">
+                                <li>Endpoint: {{ project.custom_model_endpoint }}</li>
+                                <li>Temperature: {{ project.custom_model_temperature }}</li>
+                                <li>Max Tokens: {{ project.custom_model_max_tokens }}</li>
+                            </ul>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <a href="/" class="text-indigo-600 hover:text-indigo-800">Back to Projects</a>
+                    </div>
+                </div>
+                
+                <!-- Progress Bar -->
+                <div class="mt-6">
+                    <h3 class="text-sm font-medium text-gray-700 mb-1">Project Status: <span class="font-bold">{{ project.status }}</span></h3>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        {% set progress = 0 %}
+                        {% if project.status == 'created' %}
+                            {% set progress = 0 %}
+                        {% elif project.status == 'researching' %}
+                            {% set progress = 20 %}
+                        {% elif project.status == 'research_complete' or project.status == 'writing' %}
+                            {% set progress = 40 %}
+                        {% elif project.status == 'writing_complete' or project.status == 'reviewing' %}
+                            {% set progress = 70 %}
+                        {% elif project.status == 'review_complete' %}
+                            {% set progress = 90 %}
+                        {% elif project.status == 'completed' %}
+                            {% set progress = 100 %}
+                        {% endif %}
+                        <div class="progress-bar bg-purple-600 h-2.5 rounded-full" style="width: {{ progress }}%"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="card p-6 mb-6">
+                <h3 class="text-lg font-semibold mb-4">Actions</h3>
+                <div class="flex flex-wrap gap-4">
+                    <button id="researchBtn" class="btn-primary text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if research %}opacity-50{% endif %}">
+                        <span class="inline-block">📊</span> Research
+                    </button>
+                    <button id="writeBtn" class="btn-primary text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if not research or draft %}opacity-50{% endif %}">
+                        <span class="inline-block">📝</span> Write Paper
+                    </button>
+                    <button id="reviewBtn" class="btn-primary text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if not draft or review %}opacity-50{% endif %}">
+                        <span class="inline-block">🔍</span> Review Paper
+                    </button>
+                    <button id="multiAgentBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if final %}opacity-50{% endif %}">
+                        <span class="inline-block">🤖</span> Generate with Multi-Agent
+                    </button>
+                    <button id="interactiveMultiAgentBtn" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if final %}opacity-50{% endif %}">
+                        <span class="inline-block">🧠</span> Interactive Multi-Agent
+                    </button>
+                    {% if draft %}
+                    <button id="downloadBtn" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg flex items-center gap-2">
+                        <span class="inline-block">📥</span> Download Paper
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Paper Content Tabs -->
+            <div class="card p-6 mb-6">
+                <div class="border-b border-gray-200 mb-6">
+                    <nav class="-mb-px flex">
+                        <button class="tab-btn mr-8 py-4 text-indigo-500 border-b-2 border-indigo-500 font-medium" data-tab="research">Research</button>
+                        <button class="tab-btn mr-8 py-4 text-gray-500 font-medium" data-tab="paper">Paper</button>
+                        <button class="tab-btn py-4 text-gray-500 font-medium" data-tab="review">Review</button>
+                    </nav>
+                </div>
+                
+                <!-- Research Tab Content -->
+                <div id="research-tab" class="tab-content">
+                    {% if research %}
+                        <div class="mb-4">
+                            <h3 class="text-lg font-medium text-gray-900 mb-2">Research Results</h3>
+                            <div class="prose prose-indigo max-w-none">
+                                <pre id="research-content" class="bg-gray-50 p-4 rounded overflow-auto max-h-96">{{ research.content }}</pre>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="text-center text-gray-500 py-8">
+                            <p>No research has been conducted yet. Click the "Research" button to start.</p>
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Paper Tab Content -->
+                <div id="paper-tab" class="tab-content hidden">
+                    {% if draft %}
+                        <div class="mb-4">
+                            <h3 class="text-lg font-medium text-gray-900 mb-2">Paper Draft</h3>
+                            <div class="prose prose-indigo max-w-none">
+                                <div id="paper-content" class="bg-white p-4 rounded border border-gray-200">
+                                    {{ draft.content|safe }}
+                                </div>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="text-center text-gray-500 py-8">
+                            <p>No paper has been written yet. Complete the research phase first, then click "Write Paper".</p>
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Review Tab Content -->
+                <div id="review-tab" class="tab-content hidden">
+                    {% if review %}
+                        <div class="mb-4">
+                            <h3 class="text-lg font-medium text-gray-900 mb-2">Review Feedback</h3>
+                            <div class="prose prose-indigo max-w-none">
+                                <div id="review-content" class="bg-gray-50 p-4 rounded">
+                                    {{ review.content|safe }}
+                                </div>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="text-center text-gray-500 py-8">
+                            <p>No review has been conducted yet. Complete the writing phase first, then click "Review Paper".</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Live Logs -->
+            <div class="card p-6">
+                <h3 class="text-lg font-semibold mb-4">Activity Log</h3>
+                <div id="logs-container" class="log-container">
+                    <div class="text-center text-gray-400 py-4">Loading logs...</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Variables
+        const projectId = {{ project.id }};
+        let latestLogTimestamp = '';
+        
+        // Tab Switcher
+        document.querySelectorAll('.tab-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                // Hide all tab contents
+                document.querySelectorAll('.tab-content').forEach(tab => {
+                    tab.classList.add('hidden');
+                });
+                
+                // Remove active class from all tabs
+                document.querySelectorAll('.tab-btn').forEach(tab => {
+                    tab.classList.remove('text-indigo-500', 'border-b-2', 'border-indigo-500');
+                    tab.classList.add('text-gray-500');
+                });
+                
+                // Show the selected tab content
+                const tabName = button.getAttribute('data-tab');
+                document.getElementById(`${tabName}-tab`).classList.remove('hidden');
+                
+                // Add active class to the selected tab
+                button.classList.remove('text-gray-500');
+                button.classList.add('text-indigo-500', 'border-b-2', 'border-indigo-500');
+            });
+        });
+        
+        // Action Buttons
+        document.getElementById('researchBtn').addEventListener('click', () => startPhase('research'));
+        document.getElementById('writeBtn').addEventListener('click', () => startPhase('writing'));
+        document.getElementById('reviewBtn').addEventListener('click', () => startPhase('review'));
+        document.getElementById('multiAgentBtn').addEventListener('click', () => startPhase('multi-agent'));
+        document.getElementById('interactiveMultiAgentBtn').addEventListener('click', () => startPhase('interactive-multi-agent'));
+        
+        {% if draft %}
+        document.getElementById('downloadBtn').addEventListener('click', () => {
+            // Create a Blob with the paper content
+            const paperContent = document.getElementById('paper-content').innerText;
+            const blob = new Blob([paperContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            
+            // Create a link element to download the file
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '{{ project.topic }}.md';
+            document.body.appendChild(a);
+            a.click();
+            
+            // Clean up
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+        {% endif %}
+        
+        // Start a project phase (research, writing, or review)
+        function startPhase(phase) {
+            // Fix button ID mismatches by converting hyphens in phase name to camelCase for button IDs
+            let buttonId = phase;
+            
+            // Handle special cases for multi-agent button IDs
+            if (phase === 'multi-agent') {
+                buttonId = 'multiAgent';
+            } else if (phase === 'interactive-multi-agent') {
+                buttonId = 'interactiveMultiAgent';
+            }
+            
+            const button = document.getElementById(`${buttonId}Btn`);
+            if (!button) {
+                console.error(`Button with ID ${buttonId}Btn not found`);
+                return;
+            }
+            
+            if (button.classList.contains('opacity-50')) {
+                return; // Button is disabled
+            }
+            
+            // Disable the button
+            button.classList.add('opacity-50');
+            button.disabled = true;
+            
+            // Show loading indication
+            const originalText = button.innerHTML;
+            button.innerHTML = `<span class="inline-block animate-spin">⏳</span> Processing...`;
+            
+            // Make API call
+            fetch(`/api/projects/${projectId}/start-${phase}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(`Error: ${data.error}`);
+                } else {
+                    // Start polling for logs
+                    setInterval(() => {
+                        fetchLogs();
+                    }, 2000);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert(`An error occurred: ${error.message}`);
+                
+                // Restore button
+                button.innerHTML = originalText;
+                button.classList.remove('opacity-50');
+                button.disabled = false;
+            });
+        }
+        
+        // Update logs function (for better readability)
+        function updateLogs(forceRefresh = false) {
+            if (forceRefresh) {
+                latestLogTimestamp = null;
+            }
+            fetchLogs();
+        }
+        
+        // Fetch and display logs
+        async function fetchLogs() {
+            try {
+                const url = latestLogTimestamp 
+                    ? `/api/projects/${projectId}/logs?since=${encodeURIComponent(latestLogTimestamp)}`
+                    : `/api/projects/${projectId}/logs`;
+                    
+                const response = await fetch(url);
+                const logs = await response.json();
+                
+                const logsContainer = document.getElementById('logs-container');
+                
+                // Clear the loading message on first load
+                if (!latestLogTimestamp && logs.length === 0) {
+                    logsContainer.innerHTML = '<div class="text-center text-gray-400 py-4">No activity logs yet.</div>';
+                } else if (!latestLogTimestamp) {
+                    logsContainer.innerHTML = '';
+                }
+                
+                if (logs.length > 0) {
+                    // Update the latest timestamp
+                    latestLogTimestamp = logs[logs.length - 1].timestamp;
+                    
+                    // Add new logs to the container
+                    logs.forEach(log => {
+                        const logEntry = document.createElement('div');
+                        logEntry.className = `log-entry ${log.message_type || ''}`;
+                        
+                        logEntry.innerHTML = `
+                            <span class="log-timestamp">[${log.timestamp}]</span>
+                            <span class="log-agent">[${log.agent_type}]</span>
+                            <span class="log-message">${log.activity}</span>
+                        `;
+                        
+                        logsContainer.appendChild(logEntry);
+                    });
+                    
+                    // Scroll to the bottom of the logs container
+                    logsContainer.scrollTop = logsContainer.scrollHeight;
+                }
+            } catch (error) {
+                console.error('Error fetching logs:', error);
+            }
+            
+            // Schedule the next logs fetch
+            setTimeout(fetchLogs, 5000);
+        }
+        
+        // Start fetching logs when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchLogs();
+        });
+    </script>
+</body>
+</html>
