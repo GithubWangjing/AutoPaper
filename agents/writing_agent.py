@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import time
 from datetime import datetime
 from .base_agent import BaseAgent
 
@@ -21,9 +22,18 @@ class WritingAgent(BaseAgent):
         super().__init__(model_type=model_type, custom_model_config=custom_model_config)
         self.name = "Writing Agent"
         self.description = "Writes academic papers based on research findings"
+        self._writing_in_progress = False
+        self._start_time = None
 
     def process(self, topic, research_data):
         """Process the writing task for a given topic and research data."""
+        # Check if already processing to prevent duplicate requests
+        if self._writing_in_progress:
+            logger.warning(f"Writing is already in progress for topic: {topic}")
+            return f"# Writing in Progress\n\nThe writing process for '{topic}' started {self._get_elapsed_time()} ago and is currently at {self.progress}% completion. Please wait for it to finish."
+        
+        self._writing_in_progress = True
+        self._start_time = time.time()
         logger.info(f"Starting writing process on topic: {topic}")
         
         try:
@@ -40,12 +50,14 @@ class WritingAgent(BaseAgent):
             
             # Set progress to 100% to indicate completion
             self.progress = 100
+            self._writing_in_progress = False
             return paper_content
             
         except Exception as e:
             logger.error(f"Error in writing process: {str(e)}")
             error_message = f"# Error in Paper Generation\n\nAn error occurred while generating the paper: {str(e)}\n\nPlease try again or contact support if the issue persists."
             self.progress = 0
+            self._writing_in_progress = False
             return error_message
     
     def _generate_paper(self, topic, research_data):
@@ -60,9 +72,9 @@ class WritingAgent(BaseAgent):
         methodologies = analysis.get("methodologies", [])
         research_gaps = analysis.get("research_gaps", [])
         
-        # Format reference information
+        # Format reference information - limit to 8 references to reduce token usage
         references = []
-        for i, paper in enumerate(papers[:10]):  # Limit to 10 references
+        for i, paper in enumerate(papers[:8]):
             authors = paper.get("authors", [])
             author_text = ", ".join(authors[:3])
             if len(authors) > 3:
@@ -92,8 +104,8 @@ class WritingAgent(BaseAgent):
             {"role": "system", "content": f"You are an expert academic writer. Create a title and abstract for a paper on '{topic}' based on the provided research."},
             {"role": "user", "content": f"""Create a title and abstract for an academic paper on "{topic}".
             
-Summary of research: {summary[:1000]}
-Key findings: {key_findings_text[:500]}
+Summary of research: {summary[:800]}
+Key findings: {key_findings_text[:400]}
             
 Format your response as:
 # [Title]
@@ -110,6 +122,7 @@ Format your response as:
             raise Exception("Failed to generate title and abstract")
         
         paper_sections["title_abstract"] = title_and_abstract
+        logger.info(f"Title and abstract generated ({len(title_and_abstract)} chars)")
         
         # 2. Generate introduction
         logger.info("Generating introduction")
@@ -117,8 +130,8 @@ Format your response as:
             {"role": "system", "content": "You are an expert academic writer. Create an introduction section for a research paper."},
             {"role": "user", "content": f"""Write an introduction section for an academic paper on "{topic}".
             
-Summary of research: {summary[:1000]}
-Key findings: {key_findings_text[:500]}
+Summary of research: {summary[:800]}
+Key findings: {key_findings_text[:400]}
             
 The introduction should include:
 1. Background context
@@ -139,6 +152,7 @@ Format your response as:
             raise Exception("Failed to generate introduction")
         
         paper_sections["introduction"] = introduction
+        logger.info(f"Introduction generated ({len(introduction)} chars)")
         
         # 3. Generate literature review
         logger.info("Generating literature review")
@@ -170,6 +184,7 @@ Format your response as:
             raise Exception("Failed to generate literature review")
         
         paper_sections["literature_review"] = literature_review
+        logger.info(f"Literature review generated ({len(literature_review)} chars)")
         
         # 4. Generate methodology
         logger.info("Generating methodology section")
@@ -198,6 +213,7 @@ Format your response as:
             raise Exception("Failed to generate methodology")
         
         paper_sections["methodology"] = methodology
+        logger.info(f"Methodology generated ({len(methodology)} chars)")
         
         # 5. Generate results and discussion
         logger.info("Generating results and discussion")
@@ -227,6 +243,7 @@ Format your response as:
             raise Exception("Failed to generate results and discussion")
         
         paper_sections["results_discussion"] = results_discussion
+        logger.info(f"Results and discussion generated ({len(results_discussion)} chars)")
         
         # 6. Generate future research directions
         logger.info("Generating future research directions")
@@ -256,6 +273,7 @@ Format your response as:
             raise Exception("Failed to generate future research directions")
         
         paper_sections["future_research"] = future_research
+        logger.info(f"Future research directions generated ({len(future_research)} chars)")
         
         # 7. Generate conclusion
         logger.info("Generating conclusion")
@@ -284,6 +302,7 @@ Format your response as:
             raise Exception("Failed to generate conclusion")
         
         paper_sections["conclusion"] = conclusion
+        logger.info(f"Conclusion generated ({len(conclusion)} chars)")
         
         # 8. Format references section
         logger.info("Formatting references")
@@ -303,6 +322,7 @@ Format your response as:
             paper_sections["references"]
         ])
         
+        logger.info(f"Paper generation completed, total length: {len(paper_content)} characters")
         self.progress = 100
         return paper_content
 
@@ -370,3 +390,16 @@ Format your response as:
     def get_progress(self):
         """Return the current progress of the writing task."""
         return self.progress 
+
+    def _get_elapsed_time(self):
+        """Get a human-readable elapsed time since writing started."""
+        if not self._start_time:
+            return "unknown time"
+        
+        elapsed = time.time() - self._start_time
+        if elapsed < 60:
+            return f"{int(elapsed)} seconds"
+        elif elapsed < 3600:
+            return f"{int(elapsed / 60)} minutes"
+        else:
+            return f"{elapsed / 3600:.1f} hours" 

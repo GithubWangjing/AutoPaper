@@ -33,8 +33,8 @@ ARXIV_SORT_BY = os.getenv("ARXIV_SORT_BY", "relevance")  # Options: "relevance",
 # Valid model types: "openai", "siliconflow"
 DEFAULT_MODEL_TYPE = os.getenv("DEFAULT_MODEL_TYPE", "openai")
 
-# Valid research sources: "none", "arxiv", "google_scholar"
-DEFAULT_RESEARCH_SOURCE = os.getenv("DEFAULT_RESEARCH_SOURCE", "google_scholar")
+# Valid research sources: "none", "arxiv", "pubmed"
+DEFAULT_RESEARCH_SOURCE = os.getenv("DEFAULT_RESEARCH_SOURCE", "arxiv")
 
 # App configuration
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"

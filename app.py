@@ -546,6 +546,14 @@ def api_start_research(project_id):
         if not project:
             return jsonify({"error": f"Project with ID {project_id} not found"}), 404
         
+        # Check if project is already in research phase
+        if project.status in ["researching"]:
+            logger.info(f"[Project {project_id}] Research already in progress")
+            return jsonify({
+                "status": "in_progress",
+                "message": "Research already in progress"
+            })
+        
         # 更新项目状态
         project.status = "researching"
         db.session.commit()
@@ -563,10 +571,20 @@ def api_start_research(project_id):
             # 记录活动
             log_agent_activity(project_id, 'research', f'Initializing research agent with source: {project.research_source}')
             
-            # 执行研究
-            log_agent_activity(project_id, 'research', f'Researching topic: {project.topic}')
-            result = research_agent.process(project.topic)
+            # Check if research is already in progress (uses our new lock mechanism)
+            response = research_agent.process(project.topic)
             
+            # Check if we got an "in progress" message
+            try:
+                result_data = json.loads(response)
+                if isinstance(result_data, dict) and result_data.get('status') == 'in_progress':
+                    return jsonify({
+                        "status": "in_progress",
+                        "message": result_data.get('message', 'Research in progress')
+                    })
+            except:
+                pass
+                
             # 记录活动
             log_agent_activity(project_id, 'research', 'Research completed successfully')
             
@@ -575,7 +593,7 @@ def api_start_research(project_id):
                 project_id=project_id,
                 version_number=1,
                 content_type='research',
-                content=result
+                content=response
             )
             db.session.add(version)
             
@@ -595,7 +613,7 @@ def api_start_research(project_id):
             
             return jsonify({
                 "status": "success",
-                "message": "Research started successfully"
+                "message": "Research completed successfully"
             })
             
         except Exception as e:
@@ -631,6 +649,14 @@ def api_start_writing(project_id):
         if not project:
             return jsonify({"error": f"Project with ID {project_id} not found"}), 404
         
+        # Check if project is already in writing phase
+        if project.status in ["writing"]:
+            logger.info(f"[Project {project_id}] Writing already in progress")
+            return jsonify({
+                "status": "in_progress",
+                "message": "Writing already in progress"
+            })
+        
         # 检查是否已完成研究阶段
         research_version = PaperVersion.query.filter_by(
             project_id=project_id, 
@@ -663,6 +689,14 @@ def api_start_writing(project_id):
             log_agent_activity(project_id, 'writing', f'Writing paper on topic: {project.topic}')
             result = writing_agent.process(project.topic, research_version.content)
             
+            # Check if writing is already in progress (our new lock mechanism)
+            if result.startswith("# Writing in Progress"):
+                logger.info(f"[Project {project_id}] Writing already in progress according to agent")
+                return jsonify({
+                    "status": "in_progress",
+                    "message": "Writing in progress"
+                })
+            
             # 记录活动
             log_agent_activity(project_id, 'writing', 'Writing completed successfully')
             
@@ -691,7 +725,7 @@ def api_start_writing(project_id):
             
             return jsonify({
                 "status": "success",
-                "message": "Writing started successfully"
+                "message": "Writing completed successfully"
             })
             
         except Exception as e:

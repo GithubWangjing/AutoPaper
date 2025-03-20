@@ -23,7 +23,7 @@ class ResearchAgent(BaseAgent):
         
         Args:
             model_type: Type of model to use for text generation
-            research_source: Source(s) to use for research (comma-separated list: arxiv, google_scholar, pubmed, or none)
+            research_source: Source(s) to use for research (comma-separated list: arxiv, pubmed, or none)
             custom_model_config: Custom model configuration for custom model types
         """
         super().__init__(model_type=model_type, custom_model_config=custom_model_config)
@@ -32,21 +32,39 @@ class ResearchAgent(BaseAgent):
         
         # Convert research source string to list if it's a string
         if isinstance(research_source, str):
-            self.research_sources = [s.strip() for s in research_source.split(',')]
+            # Remove google_scholar from research sources if present
+            sources = [s.strip() for s in research_source.split(',')]
+            self.research_sources = [s for s in sources if s != 'google_scholar']
+            # Default to arxiv if google_scholar was the only source
+            if not self.research_sources and 'google_scholar' in sources:
+                self.research_sources = ['arxiv']
         else:
-            self.research_sources = research_source if isinstance(research_source, list) else ['none']
+            self.research_sources = [s for s in research_source if s != 'google_scholar'] if isinstance(research_source, list) else ['arxiv']
         
-        # Initialize clients
-        self.arxiv_client = Arxiv(timeout=30, max_retries=3)
-        # Initialize MCP without problematic parameters
-        self.mcp_client = MCP()
-        self.pubmed_client = PubMed(timeout=30, max_retries=3)
-        self.max_retry_attempts = 3
-        self.retry_delay = 5  # seconds
+        # Initialize clients (only necessary ones)
+        self.arxiv_client = Arxiv(timeout=15, max_retries=2)  # Reduced timeout and retries
+        self.pubmed_client = PubMed(timeout=15, max_retries=2)  # Reduced timeout and retries
+        self.max_retry_attempts = 2  # Reduced from 3 to 2
+        self.retry_delay = 2  # Reduced from 5 to 2 seconds
+        
+        # Add processing lock and timing
+        self._research_in_progress = False
+        self._start_time = None
 
     def process(self, topic):
         """Process the research task for a given topic."""
-        logger.info(f"Starting research process on topic: {topic} using sources: {', '.join(self.research_sources)}")
+        # Check if already processing to prevent duplicate requests
+        if self._research_in_progress:
+            logger.warning(f"Research is already in progress for topic: {topic}")
+            return json.dumps({
+                'message': f"Research for '{topic}' started {self._get_elapsed_time()} ago and is currently at {self.progress}% completion. Please wait for it to finish.",
+                'progress': self.progress,
+                'status': 'in_progress'
+            })
+        
+        self._research_in_progress = True
+        self._start_time = time.time()
+        logger.info(f"Starting optimized research process on topic: {topic} using sources: {', '.join(self.research_sources)}")
         self.progress = 10
         
         try:
@@ -72,10 +90,10 @@ class ResearchAgent(BaseAgent):
                     
                     # Search in each selected source
                     if source == "arxiv":
-                        # Try to get papers from arXiv with retries
+                        # Try to get papers from arXiv with fewer retries
                         for attempt in range(self.max_retry_attempts):
                             try:
-                                search_results = self.arxiv_client.search(topic, max_results=10)
+                                search_results = self.arxiv_client.search(topic, max_results=8)  # Reduced from 10
                                 arxiv_papers = search_results.get('papers', [])
                                 if arxiv_papers:
                                     logger.info(f"Successfully retrieved {len(arxiv_papers)} papers from arXiv")
@@ -88,42 +106,16 @@ class ResearchAgent(BaseAgent):
                             except Exception as e:
                                 error_message = str(e)
                                 logger.error(f"Error retrieving papers from arXiv (attempt {attempt+1}): {error_message}")
-                                logger.error(traceback.format_exc())
                                 time.sleep(self.retry_delay)  # Wait before retry
                                 
                         if not papers:
                             failed_sources["arxiv"] = error_message or "No papers found"
                     
-                    elif source == "google_scholar":
-                        # Try to get papers from Google Scholar with minimal retries
-                        # Google Scholar is often difficult to connect to, so we give up quickly
-                        for attempt in range(1):  # Only try once instead of multiple retries
-                            try:
-                                # Use the MCP client which will try scholarly first, then SerpAPI if available
-                                search_results = self.mcp_client.search_papers(topic, max_results=10, timeout=15)  # Shorter timeout
-                                scholar_papers = search_results.get('papers', [])
-                                if scholar_papers:
-                                    logger.info(f"Successfully retrieved {len(scholar_papers)} papers from Google Scholar")
-                                    papers = self._format_google_scholar_papers(scholar_papers)
-                                    all_papers.extend(papers)
-                                    successful_sources.append("google_scholar")
-                                    break
-                                else:
-                                    logger.warning(f"No papers found in Google Scholar for topic: {topic}")
-                            except Exception as e:
-                                error_message = str(e)
-                                logger.error(f"Error retrieving papers from Google Scholar: {error_message}")
-                                logger.error(traceback.format_exc())
-                                # Don't retry - Google Scholar is unreliable
-                                
-                        if not papers:
-                            failed_sources["google_scholar"] = error_message or "No papers found"
-                            
                     elif source == "pubmed":
-                        # Try to get papers from PubMed with retries
+                        # Try to get papers from PubMed with fewer retries
                         for attempt in range(self.max_retry_attempts):
                             try:
-                                search_results = self.pubmed_client.search(topic, max_results=10)
+                                search_results = self.pubmed_client.search(topic, max_results=8)  # Reduced from 10
                                 pubmed_papers = search_results.get('papers', [])
                                 if pubmed_papers:
                                     logger.info(f"Successfully retrieved {len(pubmed_papers)} papers from PubMed")
@@ -136,7 +128,6 @@ class ResearchAgent(BaseAgent):
                             except Exception as e:
                                 error_message = str(e)
                                 logger.error(f"Error retrieving papers from PubMed (attempt {attempt+1}): {error_message}")
-                                logger.error(traceback.format_exc())
                                 time.sleep(self.retry_delay)  # Wait before retry
                                 
                         if not papers:
@@ -146,73 +137,22 @@ class ResearchAgent(BaseAgent):
             self.progress = 40
             
             # If we couldn't get any papers from any source and we didn't explicitly choose 'none',
-            # try to get alternative papers using the LLM
+            # quickly fall back to LLM generation
             if not all_papers and self.research_sources != ['none']:
-                logger.warning(f"Failed to retrieve papers from any selected source. Using LLM generation instead.")
-                
-                # Create a system message for the LLM to generate realistic research paper information
-                system_message = f"""You are a research expert assistant. The user is looking for research papers on "{topic}" but the API search failed. 
-                Generate information for 5 realistic research papers on this topic that COULD exist (but don't make up fake statistics or specific numerical claims).
-                For each paper, include:
-                1. A realistic title that academic researchers might use
-                2. 2-4 author names (use realistic names for the field)
-                3. A detailed abstract (200-300 words) that describes the paper's purpose, methods, and findings in general terms
-                4. The publication year (between 2018-2023)
-                5. A realistic journal name related to the topic
-                
-                Format your response as a JSON array of paper objects. Each paper should contain: title, authors (array), abstract, year, and journal.
-                Be detailed and realistic but avoid making specific numerical claims or statistics that would need citation."""
-                
-                # Create the messages for the LLM
-                messages = [
-                    {"role": "system", "content": system_message},
-                    {"role": "user", "content": f"Generate 5 realistic research papers about '{topic}'. Focus on being scholarly and accurate without making up specific statistics."}
-                ]
-                
-                try:
-                    # Make the API call to the LLM
-                    response = self._make_api_call(messages)
-                    
-                    # Try to parse the JSON response
-                    try:
-                        json_start = response.find('[')
-                        json_end = response.rfind(']') + 1
-                        
-                        if json_start >= 0 and json_end > json_start:
-                            json_response = response[json_start:json_end]
-                            llm_papers = json.loads(json_response)
-                            
-                            # Format the papers to match our expected structure
-                            for paper in llm_papers:
-                                formatted_paper = {
-                                    'title': paper.get('title', ''),
-                                    'authors': paper.get('authors', []),
-                                    'abstract': paper.get('abstract', ''),
-                                    'year': str(paper.get('year', '')),
-                                    'journal': paper.get('journal', ''),
-                                    'url': f"https://example.com/generated-papers/{topic}/{paper.get('title', '').replace(' ', '-')}",
-                                    'source': 'llm_suggested'
-                                }
-                                all_papers.append(formatted_paper)
-                            
-                            if all_papers:
-                                logger.info(f"Generated {len(all_papers)} papers using LLM for topic: {topic}")
-                                source = "llm_suggested"
-                    except (json.JSONDecodeError, ValueError) as json_err:
-                        logger.error(f"Error parsing LLM-generated papers JSON: {str(json_err)}")
-                except Exception as e:
-                    logger.error(f"Error generating papers with LLM: {str(e)}")
-                
-                # If LLM-based paper generation failed, fall back to the hardcoded method
-                if not all_papers:
-                    all_papers = self._create_llm_generated_papers(topic)
-                    logger.info(f"Generated {len(all_papers)} papers using fallback method for topic: {topic}")
-                    source = "llm_generated"
+                logger.warning(f"Failed to retrieve papers from selected sources. Using LLM generation instead.")
+                all_papers = self._create_llm_generated_papers(topic)
+                logger.info(f"Generated {len(all_papers)} papers using fallback method for topic: {topic}")
+                source = "llm_generated"
             else:
                 source = ",".join(successful_sources)
             
             # Update progress for analysis phase
             self.progress = 60
+            
+            # If we have more than 5 papers, limit to just 5 for faster analysis
+            if len(all_papers) > 5:
+                all_papers = all_papers[:5]
+                logger.info(f"Limited papers to 5 for faster analysis")
             
             # Create a detailed analysis based on the papers
             analysis = self._analyze_papers(topic, all_papers)
@@ -235,13 +175,15 @@ class ResearchAgent(BaseAgent):
             # Set progress to 100% to indicate completion
             self.progress = 100
             logger.info(f"Research process completed for topic: {topic}")
+            self._research_in_progress = False
             return json.dumps(result)
-            
+        
         except Exception as e:
             logger.error(f"Error in research process: {str(e)}")
             logger.error(traceback.format_exc())
             # Return a simple error result that won't break the app
             self.progress = 100  # Mark as complete even though it failed
+            self._research_in_progress = False
             return json.dumps({
                 'error': str(e),
                 'papers': self._create_llm_generated_papers(topic, count=3),
@@ -331,6 +273,24 @@ class ResearchAgent(BaseAgent):
         if not abstract or len(abstract.strip()) < 20:
             return ["No key points available"]
         
+        # For short abstracts, just use a basic extraction method to save API calls
+        if len(abstract.strip()) < 200:
+            sentences = abstract.split('.')
+            key_points = []
+            
+            for sentence in sentences:
+                if len(sentence.strip()) > 20:
+                    key_points.append(sentence.strip())
+                    if len(key_points) >= 3:
+                        break
+            
+            # If we couldn't find enough key points, add some placeholders
+            while len(key_points) < 3:
+                key_points.append("Additional information not available")
+                
+            return key_points
+        
+        # For longer abstracts, use the LLM
         # Create a system message for the LLM
         system_message = "You are an expert academic researcher. Extract the 3 most important key points from the following paper abstract. Return only the key points as a list, with each point being concise and focused on a single finding or contribution."
         
@@ -449,13 +409,53 @@ class ResearchAgent(BaseAgent):
         """Generate a detailed analysis of papers using LLM."""
         logger.info(f"Analyzing {len(papers)} papers for topic: {topic}")
         
-        # Prepare paper information for the LLM
+        # If no papers, return basic analysis
+        if not papers:
+            return {
+                "key_findings": [f"No research papers found on {topic}"],
+                "methodologies": ["Not applicable"],
+                "research_gaps": [f"Further research needed in {topic}"]
+            }
+            
+        # For small number of papers, provide basic analysis
+        if len(papers) <= 2:
+            basic_findings = []
+            basic_methods = []
+            basic_gaps = []
+            
+            for paper in papers:
+                title = paper.get('title', '')
+                abstract = paper.get('abstract', '')
+                
+                if title:
+                    basic_findings.append(f"Research on {title}")
+                
+                if abstract:
+                    if 'method' in abstract.lower():
+                        parts = abstract.split('method', 1)
+                        if len(parts) > 1:
+                            basic_methods.append(f"Method mentioned: {parts[1][:50]}...")
+                    
+                basic_gaps.append(f"Further research needed on aspects of {topic} not covered in existing literature")
+            
+            # Ensure we have at least one item in each category
+            if not basic_findings:
+                basic_findings = [f"Limited research available on {topic}"]
+            if not basic_methods:
+                basic_methods = ["Research methodologies not clearly identified in the available papers"]
+            
+            return {
+                "key_findings": basic_findings[:3],
+                "methodologies": basic_methods[:3],
+                "research_gaps": basic_gaps[:3]
+            }
+        
+        # For more papers, use the LLM for comprehensive analysis
+        # Prepare paper information for the LLM (limited to 5 papers max for efficiency)
         paper_info = []
-        for i, paper in enumerate(papers[:10]):  # Limit to 10 papers to avoid token limits
+        for i, paper in enumerate(papers[:5]):
             paper_info.append(f"Paper {i+1}: {paper['title']}")
-            paper_info.append(f"Authors: {', '.join(paper['authors'])}")
-            paper_info.append(f"Abstract: {paper['abstract']}")
-            paper_info.append(f"Year: {paper.get('year', '')}")
+            paper_info.append(f"Abstract: {paper['abstract'][:300]}...")  # Limit abstract length
             paper_info.append("---")
         
         paper_text = "\n".join(paper_info)
@@ -651,17 +651,6 @@ class ResearchAgent(BaseAgent):
                         research_message = f"ArXiv API connection failed: {str(e)}"
                         logger.error(f"ArXiv connection test failed: {str(e)}")
                 
-                elif source == "google_scholar":
-                    try:
-                        # Simple search to test connectivity
-                        test_results = self.mcp_client.search_papers("artificial intelligence medicine", max_results=2)
-                        research_status = "success" if test_results.get('papers') else "error"
-                        research_message = f"Google Scholar API connection {research_status}"
-                    except Exception as e:
-                        research_status = "error"
-                        research_message = f"Google Scholar API connection failed: {str(e)}"
-                        logger.error(f"Google Scholar connection test failed: {str(e)}")
-                
                 elif source == "pubmed":
                     try:
                         # Simple search to test connectivity
@@ -704,4 +693,17 @@ class ResearchAgent(BaseAgent):
             return {
                 'status': 'error', 
                 'message': str(e)
-            } 
+            }
+
+    def _get_elapsed_time(self):
+        """Get a human-readable elapsed time since research started."""
+        if not self._start_time:
+            return "unknown time"
+        
+        elapsed = time.time() - self._start_time
+        if elapsed < 60:
+            return f"{int(elapsed)} seconds"
+        elif elapsed < 3600:
+            return f"{int(elapsed / 60)} minutes"
+        else:
+            return f"{elapsed / 3600:.1f} hours" 
