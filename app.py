@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 import markdown2
 from io import BytesIO
 import traceback
+import re
+import html
 
 # Load environment variables
 load_dotenv()
@@ -83,65 +85,84 @@ def fromjson_filter(value):
 def process_academic_content(content):
     """Process academic content to enhance formatting, supporting markdown and LaTeX.
     
-    This filter ensures that academic papers are properly formatted with:
+    This function enhances academic content with:
     1. Proper Markdown rendering if content is in markdown format
     2. LaTeX equations properly formatted for MathJax
-    3. Code blocks properly syntax-highlighted
-    4. Tables correctly formatted
     
     Args:
-        content: The academic content (paper draft, review, etc.)
+        content: The content to process, typically a paper draft or research content
         
     Returns:
-        Processed content with HTML markup for proper rendering
+        Formatted HTML content ready for display
     """
+    if not content:
+        return ""
+    
     try:
-        import re
+        # Check if the content contains Markdown-like syntax
+        markdown_indicators = ['#', '##', '###', '```', '*', '1.', '- ', '[', '](', '|']
+        is_markdown = any(indicator in content for indicator in markdown_indicators)
         
-        # Skip processing if content is already HTML
-        if content.strip().startswith('<') and '<html' in content.lower():
-            return content
+        # If it's likely markdown, use markdown processing
+        if is_markdown:
+            # If markdown package is available, use it for better formatting
+            try:
+                import markdown
+                
+                # 处理中文内容的特殊情况，确保段落正确换行
+                # 替换单个换行为真正的换行
+                content = re.sub(r'(?<!\n)\n(?!\n)', '\n\n', content)
+                
+                # 处理标题前后的空格问题
+                content = re.sub(r'(#+)([^\n#])', r'\1 \2', content)
+                
+                html_content = markdown.markdown(
+                    content,
+                    extensions=[
+                        'markdown.extensions.extra',
+                        'markdown.extensions.codehilite',
+                        'markdown.extensions.tables'
+                    ]
+                )
+                
+                # 处理数学公式
+                html_content = re.sub(r'\$\$(.*?)\$\$', r'\\[\1\\]', html_content, flags=re.DOTALL)
+                html_content = re.sub(r'\$(.*?)\$', r'\\(\1\\)', html_content)
+                
+                return html_content
+            
+            except ImportError:
+                # Fallback to basic HTML with newlines for paragraphs
+                # Escape HTML entities, then convert newlines to paragraphs
+                escaped_content = html.escape(content)
+                paragraphs = escaped_content.split('\n\n')
+                formatted_paragraphs = []
+                for p in paragraphs:
+                    if p.strip():
+                        # 使用r-string和+组合避免f-string中反斜杠的问题
+                        formatted_paragraphs.append('<p>' + p.replace('\n', '<br>') + '</p>')
+                
+                html_content = '\n'.join(formatted_paragraphs)
+                return html_content
         
-        # Add classes to LaTeX equations for better styling
-        # Inline equations: $...$
-        content = re.sub(r'(\$[^\$]+\$)', r'<span class="math inline">\1</span>', content)
-        
-        # Display equations: $$...$$
-        content = re.sub(r'(\$\$[^\$]+\$\$)', r'<div class="math display">\1</div>', content)
-        
-        # Add classes to code blocks for better styling
-        if '```' in content:
-            # Process code blocks with language specification: ```python
-            content = re.sub(
-                r'```(\w*)\n(.*?)\n```',
-                r'<pre class="code-block language-\1"><code>\2</code></pre>',
-                content, 
-                flags=re.DOTALL
-            )
-        
-        # Add citation formatting
-        content = re.sub(r'\[@([^\]]+)\]', r'<cite class="citation">[\1]</cite>', content)
-        
-        # If markdown package is available, use it for better formatting
-        try:
-            import markdown
-            html_content = markdown.markdown(
-                content,
-                extensions=[
-                    'markdown.extensions.extra',
-                    'markdown.extensions.codehilite',
-                    'markdown.extensions.tables'
-                ]
-            )
+        # For plain text content
+        else:
+            # Simple conversion for non-markdown content
+            # Escape HTML entities, then convert newlines to paragraphs
+            escaped_content = html.escape(content)
+            paragraphs = escaped_content.split('\n\n')
+            formatted_paragraphs = []
+            for p in paragraphs:
+                if p.strip():
+                    # 使用r-string和+组合避免f-string中反斜杠的问题
+                    formatted_paragraphs.append('<p>' + p.replace('\n', '<br>') + '</p>')
+            
+            html_content = '\n'.join(formatted_paragraphs)
             return html_content
-        except ImportError:
-            # Fallback: just return the content with basic enhancements
-            return content
             
     except Exception as e:
-        logger.error(f"Error processing academic content: {str(e)}")
-        # Return original content if processing fails
-        return content
+        print(f"Error processing content: {str(e)}")
+        return f"<p>Error processing content: {str(e)}</p><pre>{content}</pre>"
 
 # Initialize SQLAlchemy with app
 db = SQLAlchemy(app)
@@ -771,7 +792,7 @@ def api_start_review(project_id):
         logger.info(f"[Project {project_id}] review: Initializing review agent")
         
         # Get the review agent
-        review_agent = get_review_agent()
+        review_agent = get_agent_for_project(project, 'review')
         
         # Get the latest draft
         latest_draft = PaperVersion.query.filter_by(
@@ -787,11 +808,21 @@ def api_start_review(project_id):
         # Get review feedback
         feedback = review_agent.process(project.topic, latest_draft.content)
         
-        # Ensure feedback is a string
+        # Ensure feedback is a string with proper Markdown formatting
         if isinstance(feedback, list):
-            feedback = '\n'.join(feedback)
+            # If it's a list, join with newlines and ensure proper Markdown
+            feedback_str = ""
+            for item in feedback:
+                if item.startswith('## '):
+                    # It's already a heading
+                    feedback_str += f"{item}\n\n"
+                else:
+                    # It's a bullet point
+                    feedback_str += f"- {item}\n"
+            feedback = feedback_str
         elif not isinstance(feedback, str):
-            feedback = str(feedback)
+            # Convert any other type to string and wrap in markdown
+            feedback = f"## Review Feedback\n\n{str(feedback)}"
         
         # Save the review results
         try:
@@ -1041,14 +1072,24 @@ def run_interactive_multi_agent_process(project_id):
                 review_agent = get_agent_for_project(project, 'review')
                 review_feedback = review_agent.process(project.topic, paper_draft)
                 
-                # Convert review feedback to string if it's not already
-                if not isinstance(review_feedback, str):
-                    review_feedback_str = json.dumps(review_feedback, ensure_ascii=False)
-                else:
-                    review_feedback_str = review_feedback
+                # Ensure feedback is a string with proper Markdown formatting
+                if isinstance(review_feedback, list):
+                    # If it's a list, join with newlines and ensure proper Markdown
+                    feedback_str = ""
+                    for item in review_feedback:
+                        if item.startswith('## '):
+                            # It's already a heading
+                            feedback_str += f"{item}\n\n"
+                        else:
+                            # It's a bullet point
+                            feedback_str += f"- {item}\n"
+                    review_feedback = feedback_str
+                elif not isinstance(review_feedback, str):
+                    # Convert any other type to string and wrap in markdown
+                    review_feedback = f"## Review Feedback\n\n{str(review_feedback)}"
                 
                 # Save review
-                save_version(project_id, "review", review_feedback_str)
+                save_version(project_id, "review", review_feedback)
                 
                 update_agent_status(project_id, 'review', 'Complete', 'Review completed')
                 add_agent_log(project_id, 'review', 'Paper review completed successfully')

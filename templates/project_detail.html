@@ -544,6 +544,24 @@
                                                 border: none;
                                             }
                                             
+                                            /* Print styles specifically for review content */
+                                            #review-content-printing:target, #review-content-printing:target * {
+                                                visibility: visible;
+                                            }
+                                            
+                                            #review-content-printing:target {
+                                                position: absolute;
+                                                left: 0;
+                                                top: 0;
+                                                width: 100%;
+                                                height: 100%;
+                                                padding: 25mm;
+                                                margin: 0;
+                                                background: white;
+                                                box-shadow: none;
+                                                border: none;
+                                            }
+                                            
                                             .paper-container {
                                                 font-size: 12pt;
                                                 column-count: 1 !important;
@@ -587,21 +605,99 @@
                 <!-- Review Tab Content -->
                 <div id="review-tab" class="tab-content hidden">
                     {% if review %}
-                        <div class="mb-4">
-                            <h3 class="text-lg font-medium text-gray-900 mb-2">Review Feedback</h3>
-                            <div class="prose prose-indigo max-w-none">
-                                <div id="review-content" class="bg-gray-50 p-4 rounded markdown-content">
-                                    {% if '\n' in review.content %}
-                                        {% for line in review.content.split('\n') %}
-                                            {% if line.strip() %}
-                                                <p>{{ line|safe }}</p>
-                                            {% else %}
-                                                <br>
-                                            {% endif %}
-                                        {% endfor %}
-                                    {% else %}
-                                        {{ review.content|process_academic_content|safe }}
-                                    {% endif %}
+                        <div class="mb-4 border-b pb-4 flex justify-between items-center">
+                            <h3 class="text-lg font-medium text-gray-900">Review Feedback</h3>
+                            <div class="space-x-2">
+                                <button id="toggleReviewLayoutBtn" class="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">
+                                    <span id="reviewLayoutIcon">⊞</span> Toggle Layout
+                                </button>
+                                <button id="increaseReviewFontBtn" class="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">A+</button>
+                                <button id="decreaseReviewFontBtn" class="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">A-</button>
+                                <button id="printReviewBtn" class="px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 rounded text-blue-800">
+                                    <span>🖨️</span> Print
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="review-wrapper">
+                            <div id="review-container" class="paper-container prose prose-indigo max-w-none single-column">
+                                <div id="review-content" class="bg-white p-6 rounded border border-gray-200 shadow-sm markdown-content">
+                                    <style>
+                                        /* 自定义评审内容样式 */
+                                        #review-content {
+                                            font-family: "Noto Sans SC", "SimSun", "Microsoft YaHei", sans-serif !important;
+                                            line-height: 1.8 !important;
+                                            overflow: visible !important;
+                                            height: auto !important;
+                                            min-height: 500px;
+                                            white-space: normal !important;
+                                            max-width: 100% !important;
+                                        }
+                                        
+                                        #review-content h1 {
+                                            font-size: 1.8rem;
+                                            text-align: center;
+                                            margin: 1rem 0 1.5rem 0;
+                                            font-weight: bold;
+                                            color: #1a202c;
+                                        }
+                                        
+                                        #review-content h2 {
+                                            font-size: 1.4rem;
+                                            margin: 1.5rem 0 1rem 0;
+                                            padding-bottom: 0.5rem;
+                                            border-bottom: 1px solid #e2e8f0;
+                                            color: #2d3748;
+                                            font-weight: bold;
+                                        }
+                                        
+                                        #review-content p {
+                                            margin-bottom: 1rem;
+                                            text-align: justify;
+                                            font-size: 1.05rem;
+                                            text-indent: 0;
+                                            word-break: normal;
+                                            white-space: normal;
+                                        }
+                                        
+                                        /* 解决中文内容不换行问题 */
+                                        #review-content {
+                                            word-wrap: break-word;
+                                            overflow-wrap: break-word;
+                                            word-break: break-word;
+                                        }
+                                        
+                                        /* 评审时间样式 */
+                                        #review-content em:last-child {
+                                            display: block;
+                                            text-align: right;
+                                            margin-top: 2rem;
+                                            color: #718096;
+                                            font-style: italic;
+                                        }
+                                        
+                                        /* 删除分页导航 */
+                                        .review-wrapper .pagination-nav {
+                                            display: none !important;
+                                        }
+                                        
+                                        /* 移除可能导致小框的限制 */
+                                        .review-wrapper {
+                                            max-height: none !important;
+                                            overflow: visible !important;
+                                        }
+                                        
+                                        /* 移除滚动条 */
+                                        .prose {
+                                            overflow: visible !important;
+                                        }
+                                        
+                                        /* 确保内容区域足够宽 */
+                                        .paper-container.prose {
+                                            max-width: 100% !important;
+                                        }
+                                    </style>
+                                    {{ review.content|process_academic_content|safe }}
                                 </div>
                             </div>
                         </div>
@@ -721,8 +817,17 @@
         const paperContainer = document.getElementById('paper-container');
         const layoutIcon = document.getElementById('layoutIcon');
         
+        // Review formatting controls
+        const toggleReviewLayoutBtn = document.getElementById('toggleReviewLayoutBtn');
+        const increaseReviewFontBtn = document.getElementById('increaseReviewFontBtn');
+        const decreaseReviewFontBtn = document.getElementById('decreaseReviewFontBtn');
+        const printReviewBtn = document.getElementById('printReviewBtn');
+        const reviewContainer = document.getElementById('review-container');
+        const reviewLayoutIcon = document.getElementById('reviewLayoutIcon');
+        
         // Base font size (rem)
         let currentFontSize = 1.05;
+        let currentReviewFontSize = 1.05;
 
         // Switch tabs
         document.querySelectorAll('.tab-btn').forEach(button => {
@@ -770,6 +875,21 @@
             });
         }
         
+        // Toggle review layout between one and two column
+        if (toggleReviewLayoutBtn) {
+            toggleReviewLayoutBtn.addEventListener('click', function() {
+                reviewContainer.classList.toggle('single-column');
+                reviewContainer.classList.toggle('two-column');
+                
+                // Update the icon to show current state
+                if (reviewContainer.classList.contains('two-column')) {
+                    reviewLayoutIcon.textContent = '⊟'; // Icon for single column 
+                } else {
+                    reviewLayoutIcon.textContent = '⊞'; // Icon for two columns
+                }
+            });
+        }
+        
         // Increase font size
         if (increaseFontBtn) {
             increaseFontBtn.addEventListener('click', function() {
@@ -780,12 +900,32 @@
             });
         }
         
+        // Increase review font size
+        if (increaseReviewFontBtn) {
+            increaseReviewFontBtn.addEventListener('click', function() {
+                if (currentReviewFontSize < 1.4) {
+                    currentReviewFontSize += 0.05;
+                    updateReviewFontSize();
+                }
+            });
+        }
+        
         // Decrease font size
         if (decreaseFontBtn) {
             decreaseFontBtn.addEventListener('click', function() {
                 if (currentFontSize > 0.8) {
                     currentFontSize -= 0.05;
                     updateFontSize();
+                }
+            });
+        }
+        
+        // Decrease review font size
+        if (decreaseReviewFontBtn) {
+            decreaseReviewFontBtn.addEventListener('click', function() {
+                if (currentReviewFontSize > 0.8) {
+                    currentReviewFontSize -= 0.05;
+                    updateReviewFontSize();
                 }
             });
         }
@@ -801,10 +941,39 @@
             }
         }
         
+        // Update review font size in the review content
+        function updateReviewFontSize() {
+            const reviewContent = document.getElementById('review-content');
+            if (reviewContent) {
+                const paragraphs = reviewContent.querySelectorAll('p');
+                paragraphs.forEach(p => {
+                    p.style.fontSize = `${currentReviewFontSize}rem`;
+                });
+            }
+        }
+        
         // Print paper
         if (printPaperBtn) {
             printPaperBtn.addEventListener('click', function() {
                 window.print();
+            });
+        }
+        
+        // Print review
+        if (printReviewBtn) {
+            printReviewBtn.addEventListener('click', function() {
+                // Add a temporary ID for print targeting
+                const reviewContent = document.getElementById('review-content');
+                if (reviewContent) {
+                    reviewContent.id = 'review-content-printing';
+                    window.print();
+                    // Reset the ID after printing
+                    setTimeout(() => {
+                        reviewContent.id = 'review-content';
+                    }, 500);
+                } else {
+                    window.print();
+                }
             });
         }
         

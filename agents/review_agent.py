@@ -3,6 +3,7 @@ import json
 import logging
 from datetime import datetime
 from .base_agent import BaseAgent
+import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,7 +31,7 @@ class ReviewAgent(BaseAgent):
             # Process paper content
             if not paper_content or len(paper_content) < 100:
                 logger.warning("Paper content is too short or empty")
-                error_message = ["Error: 提供的论文内容不足，无法进行完整评审", "建议增加更多内容后再次提交"]
+                error_message = ["Error: The provided paper content is insufficient for a complete review", "Please add more content and submit again"]
                 self.progress = 0
                 # Return the list directly, don't encode to JSON string
                 return error_message
@@ -47,8 +48,8 @@ class ReviewAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Error in review process: {str(e)}")
             error_message = [
-                f"Error: 评审过程中出现错误 - {str(e)}",
-                "建议检查系统设置或稍后重试"
+                f"Error: An error occurred during the review process - {str(e)}",
+                "Please check the system settings or try again later"
             ]
             self.progress = 0
             # Return the list directly, don't encode to JSON string
@@ -57,10 +58,45 @@ class ReviewAgent(BaseAgent):
     def _generate_feedback(self, topic, paper_content):
         """Generate feedback for the paper using the language model."""
         try:
-            # Create prompt for the model
+            # Create prompt for the model with improved instructions for Markdown formatting
             prompt = [
-                {"role": "system", "content": "你是一位严谨的学术论文审稿人，擅长提供建设性的论文评审意见。请对提供的论文进行全面评审，关注论文结构、研究方法、数据分析、结论等方面，并以列表形式提供5-8条具体、有针对性的改进建议。"},
-                {"role": "user", "content": f"请审阅以下关于「{topic}」的学术论文，并提供评审意见：\n\n{paper_content}\n\n请以列表形式提供5-8条具体的评审意见，重点关注论文的优点和需要改进的地方。"}
+                {"role": "system", "content": "You are a rigorous academic paper reviewer with expertise in providing constructive feedback. Please conduct a comprehensive review of the provided paper using strict Markdown formatting. Each review section must contain detailed explanations and specific suggestions (at least 3-4 complete paragraphs). Ensure proper paragraph separation and spacing for better display. Your response must follow the required Markdown format, particularly maintaining spacing between paragraphs."},
+                {"role": "user", "content": f"""Please review the following academic paper on the topic of "{topic}" and provide detailed feedback:
+
+{paper_content[:10000]}
+
+Please use the following Markdown format for your review, with each review point containing at least 3 detailed paragraphs, each paragraph having 3-5 sentences to ensure rich review details:
+
+# Paper Review Report
+
+## Innovation and Research Value
+
+[Provide at least 3 detailed paragraphs describing the paper's innovation points and research value, analyzing its positioning and contribution in academia. Each paragraph must be separated by a blank line.]
+
+## Systematic Research Methodology
+
+[Provide at least 3 detailed paragraphs evaluating the selection, implementation, and effectiveness of the research methods. Each paragraph must be separated by a blank line.]
+
+## Depth of Results Presentation
+
+[Provide at least 3 detailed paragraphs evaluating the presentation of results, depth of data analysis, and validity of conclusions. Each paragraph must be separated by a blank line.]
+
+## Potential Clinical Application Value
+
+[Provide at least 3 detailed paragraphs analyzing the potential application value of the research in clinical practice. Each paragraph must be separated by a blank line.]
+
+## Contribution to Existing Research
+
+[Provide at least 3 detailed paragraphs analyzing how the paper extends and contributes to existing literature. Each paragraph must be separated by a blank line.]
+
+## Recommendations for Future Research
+
+[Provide at least 3 detailed paragraphs containing 3-5 specific, valuable suggestions for future research directions. Each paragraph must be separated by a blank line.]
+
+Ensure each review section has complete discussion, not just brief comments. Each paragraph must contain 3-5 complete sentences, not short phrases. Paragraphs must be separated by blank lines to ensure correct Markdown rendering. The final review report should resemble a complete academic review article with professionalism and rigor.
+
+Important: Ensure there are blank lines between headings, between paragraphs, and that each section has sufficient content (at least 3 paragraphs).
+"""}
             ]
             
             # Update progress
@@ -70,42 +106,49 @@ class ReviewAgent(BaseAgent):
             logger.info("Calling language model API for paper review")
             response = self._make_api_call(prompt)
             
-            # Process the response
-            if not response or response.startswith("API"):
-                logger.error(f"API call failed: {response}")
-                raise Exception(f"Language model API call failed: {response}")
+            # Return the full Markdown response directly with improved formatting
+            if response and isinstance(response, str) and len(response) > 100:
+                # Add timestamp to the end of the Markdown
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-            # Try to extract list items from the response
-            feedback_lines = []
-            
-            # First try to parse as JSON if the response looks like a JSON array
-            if response.strip().startswith("[") and response.strip().endswith("]"):
-                try:
-                    feedback_lines = json.loads(response)
-                except json.JSONDecodeError:
-                    pass
-            
-            # If JSON parsing failed, try to extract list items manually
-            if not feedback_lines:
-                for line in response.split("\n"):
-                    line = line.strip()
-                    # Look for numbered items or bullet points
-                    if (line.startswith("-") or 
-                        line.startswith("*") or 
-                        (len(line) > 2 and line[0].isdigit() and line[1:3] in [". ", ") ", "、"])):
-                        feedback_lines.append(line.lstrip("- *0123456789.、) "))
-            
-            # If we found list items, use them
-            if feedback_lines:
-                # Add timestamp to feedback
-                timestamp = datetime.now().isoformat()
-                feedback_lines.append(f"评审时间: {timestamp}")
-                return feedback_lines
-            
-            # If no list items were found, use the whole response
-            logger.warning("Could not parse response as list items, using full response")
-            timestamp = datetime.now().isoformat()
-            return [response, f"评审时间: {timestamp}"]
+                # Fix any formatting issues in the response
+                formatted_response = response
+                
+                # Ensure adequate spacing between headings
+                formatted_response = re.sub(r'(#+\s+[^\n]+)\n(?!#)', r'\1\n\n', formatted_response)
+                
+                # Ensure adequate spacing between text paragraphs
+                formatted_response = re.sub(r'([^\n])\n([^\n#])', r'\1\n\n\2', formatted_response)
+                
+                # Ensure extra spacing before major headings
+                formatted_response = re.sub(r'\n(#+\s+)', r'\n\n\1', formatted_response)
+                
+                # Fix potential punctuation formatting issues
+                formatted_response = formatted_response.replace(':\n', ':\n\n')
+                formatted_response = formatted_response.replace('.\n', '.\n\n')
+                
+                # Remove consecutive blank lines
+                formatted_response = re.sub(r'\n{3,}', '\n\n', formatted_response)
+                
+                # Add timestamp
+                markdown_response = f"{formatted_response}\n\n*Review Time: {timestamp}*"
+                return markdown_response
+            elif not response or not isinstance(response, str):
+                logger.error(f"Invalid response from API: {response}")
+                return f"""# Error in Review Process
+
+Unable to obtain a valid review result. Please try again later.
+
+*Review Time: {datetime.now().isoformat()}*
+"""
+            else:
+                logger.warning("Response too short, might be an error")
+                return f"""# Review Results
+
+{response}
+
+*Review Time: {datetime.now().isoformat()}*
+"""
             
         except Exception as e:
             logger.error(f"Error generating feedback: {str(e)}")
