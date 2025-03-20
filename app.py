@@ -155,6 +155,9 @@ _agent_cache = {}
 # 日志缓存，记录每个项目的代理工作日志
 project_logs = {}
 
+# Global dictionaries to store logs and data
+agent_logs = {}  # Store agent logs for interactive multi-agent processes
+
 # 添加日志记录器
 def log_agent_activity(project_id, agent_type, activity, details=None):
     """记录代理活动到项目日志中"""
