@@ -100,12 +100,21 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Research Source</label>
-                            <select id="researchSource" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
-                                <option value="none">None</option>
-                                <option value="arxiv">ArXiv</option>
-                                <option value="google_scholar">Google Scholar</option>
-                            </select>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Research Sources</label>
+                            <div class="space-y-2">
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="sourceArxiv" name="researchSource" value="arxiv" class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
+                                    <label for="sourceArxiv" class="ml-2 block text-sm text-gray-700">ArXiv</label>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="sourceGoogleScholar" name="researchSource" value="google_scholar" class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
+                                    <label for="sourceGoogleScholar" class="ml-2 block text-sm text-gray-700">Google Scholar</label>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="sourcePubMed" name="researchSource" value="pubmed" class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
+                                    <label for="sourcePubMed" class="ml-2 block text-sm text-gray-700">PubMed</label>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     
@@ -172,6 +181,9 @@
                     <button class="btn-primary text-white px-4 py-1 rounded text-sm">Start Research</button>
                     <button class="btn-primary text-white px-4 py-1 rounded text-sm">Write Paper</button>
                     <button class="btn-primary text-white px-4 py-1 rounded text-sm">Review</button>
+                    <button class="delete-btn bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm flex items-center">
+                        <span class="mr-1">🗑️</span> Delete
+                    </button>
                 </div>
             </div>
             <div class="mt-4">
@@ -237,7 +249,7 @@
             e.preventDefault();
             const title = document.getElementById('projectTitle').value;
             const modelType = document.getElementById('modelType').value;
-            const researchSource = document.getElementById('researchSource').value;
+            const researchSources = Array.from(document.querySelectorAll('input[name="researchSource"]:checked')).map(input => input.value);
 
             // 收集自定义模型配置数据
             let customModelData = null;
@@ -251,7 +263,7 @@
                 };
             }
 
-            logDebug('Creating project with:', { title, modelType, researchSource, customModelData });
+            logDebug('Creating project with:', { title, modelType, researchSources, customModelData });
             
             // Show immediate visual feedback
             document.getElementById('projectForm').classList.add('opacity-50');
@@ -261,7 +273,7 @@
                 const requestData = { 
                     title, 
                     model_type: modelType, 
-                    research_source: researchSource 
+                    research_sources: researchSources 
                 };
                 
                 // 如果有自定义模型数据，添加到请求
@@ -354,47 +366,110 @@
             projectTitle.style.color = '#4F46E5'; // 添加颜色
             projectTitle.style.cursor = 'pointer'; // 添加指针样式
             
-            clone.querySelector('p').textContent = `${project.model_type} | ${project.research_source}`;
+            // Format research source (handle both string and array formats)
+            let researchSourceText = project.research_source || 'none';
+            if (project.research_sources && Array.isArray(project.research_sources)) {
+                researchSourceText = project.research_sources.join(', ');
+            } else if (project.research_source && project.research_source.includes(',')) {
+                // If it's a comma-separated string, split it for display
+                researchSourceText = project.research_source.split(',').join(', ');
+            }
+            
+            clone.querySelector('p').textContent = `${project.model_type} | ${researchSourceText}`;
             
             const progressBar = clone.querySelector('.progress-bar');
             const statusText = clone.querySelector('p:last-child');
             
             // Update progress based on status
-            switch(project.status) {
+            let progress = 0;
+            let statusDisplay = project.status || "created";
+            
+            switch (project.status) {
                 case 'created':
-                    progressBar.style.width = '0%';
-                    statusText.textContent = 'Project Created';
+                    progress = 0;
+                    statusDisplay = 'Ready to start';
                     break;
                 case 'researching':
-                    progressBar.style.width = '33%';
-                    statusText.textContent = 'Researching...';
+                    progress = 25;
+                    statusDisplay = 'Researching...';
                     break;
+                case 'research_complete':
                 case 'writing':
-                    progressBar.style.width = '66%';
-                    statusText.textContent = 'Writing Paper...';
+                    progress = 50;
+                    statusDisplay = 'Research Complete';
                     break;
+                case 'writing_complete':
                 case 'reviewing':
-                    progressBar.style.width = '90%';
-                    statusText.textContent = 'Reviewing...';
+                    progress = 75;
+                    statusDisplay = 'Draft Complete';
                     break;
+                case 'review_complete':
                 case 'completed':
-                    progressBar.style.width = '100%';
-                    statusText.textContent = 'Completed';
+                    progress = 100;
+                    statusDisplay = 'Review Complete';
                     break;
                 default:
-                    progressBar.style.width = '0%';
-                    statusText.textContent = `Status: ${project.status}`;
+                    progress = 0;
+                    statusDisplay = project.status;
             }
             
-            // Set up action buttons with explicit logging
-            const researchBtn = clone.querySelector('.btn-primary:nth-child(1)');
-            const writeBtn = clone.querySelector('.btn-primary:nth-child(2)');
-            const reviewBtn = clone.querySelector('.btn-primary:nth-child(3)');
+            progressBar.style.width = `${progress}%`;
+            statusText.textContent = statusDisplay;
             
-            // Make buttons more visible
-            researchBtn.innerHTML = `<span class="inline-block animate-pulse">📊</span> Start Research`;
-            writeBtn.innerHTML = `<span class="inline-block animate-pulse">📝</span> Write Paper`;
-            reviewBtn.innerHTML = `<span class="inline-block animate-pulse">🔍</span> Review`;
+            // Get button elements
+            const buttons = clone.querySelectorAll('button');
+            const researchBtn = buttons[0];
+            const writeBtn = buttons[1];
+            const reviewBtn = buttons[2];
+            const deleteBtn = buttons[3];
+            
+            // Set up delete button click handler
+            deleteBtn.addEventListener('click', function(e) {
+                e.stopPropagation(); // Prevent the click from bubbling to the card
+                if (confirm(`Are you sure you want to delete the project "${project.topic}"? This action cannot be undone.`)) {
+                    // Show loading state
+                    this.classList.add('opacity-50');
+                    this.innerHTML = '<span class="inline-block animate-spin mr-1">⟳</span> Deleting...';
+                    
+                    // Call the API to delete the project
+                    fetch(`/api/projects/${project.id}/delete`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Project deleted:', data);
+                        showNotification(`Project "${project.topic}" deleted successfully`, 'success');
+                        // Remove the project from the list
+                        projectCard.remove();
+                    })
+                    .catch(error => {
+                        console.error('Error deleting project:', error);
+                        showNotification(`Error deleting project: ${error.message}`, 'error');
+                        this.classList.remove('opacity-50');
+                        this.innerHTML = '<span class="mr-1">🗑️</span> Delete';
+                    });
+                }
+            });
+            
+            // Set up research button
+            researchBtn.textContent = 'Start Research';
+            researchBtn.classList.toggle('opacity-50', project.status !== 'created');
+            
+            // Set up write button
+            writeBtn.textContent = 'Write Paper';
+            writeBtn.classList.toggle('opacity-50', project.status !== 'research_complete');
+            
+            // Set up review button
+            reviewBtn.textContent = 'Review';
+            reviewBtn.classList.toggle('opacity-50', project.status !== 'writing_complete');
             
             researchBtn.addEventListener('click', function() {
                 logDebug(`Research button clicked for project ${project.id}`);

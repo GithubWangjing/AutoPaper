@@ -17,6 +17,14 @@ import traceback
 # Load environment variables
 load_dotenv()
 
+# Configure scholarly to not use proxies (must be done before any other imports)
+try:
+    from scholarly import scholarly
+    scholarly.use_proxy(None, None)
+    logging.info("Configured scholarly to not use proxies")
+except Exception as e:
+    logging.warning(f"Failed to configure scholarly proxy settings: {str(e)}")
+
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -25,9 +33,115 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get("APP_SECRET_KEY", "default_secret_key")
 
+# Application configuration
+APP_CONFIG = {
+    'ENABLE_MULTI_AGENT': os.environ.get('ENABLE_MULTI_AGENT', 'true').lower() == 'true',
+    'DEFAULT_MODEL_TYPE': os.environ.get('DEFAULT_MODEL_TYPE', 'siliconflow'),
+    'DEFAULT_RESEARCH_SOURCE': os.environ.get('DEFAULT_RESEARCH_SOURCE', 'arxiv')
+}
+
+# Make configuration available to templates
+@app.context_processor
+def inject_app_config():
+    return {'app_config': APP_CONFIG}
+
 # 配置数据库
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URI", 'sqlite:///instance/paper_projects.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Add custom Jinja2 filters
+@app.template_filter('fromjson')
+def fromjson_filter(value):
+    """Convert a JSON string to a Python object.
+    
+    This template filter is critical for the application as it allows the templates
+    to convert JSON strings stored in the database into Python dictionaries/objects
+    that can be used in the templates. Without this filter, the templates would not
+    be able to access the structured data from research results, paper drafts, etc.
+    
+    Example usage in a template:
+    {% set research_data = research.content|fromjson %}
+    {{ research_data.papers|length }}
+    
+    Args:
+        value: JSON string to convert, or a Python object to pass through
+        
+    Returns:
+        Python object (dict, list, etc.) if conversion successful,
+        the original value if it's already a Python object,
+        or an empty dict if there was an error parsing the JSON
+    """
+    try:
+        if isinstance(value, str):
+            return json.loads(value)
+        return value  # Already a Python object
+    except Exception as e:
+        logger.error(f"Error parsing JSON: {str(e)}")
+        return {}  # Return empty dict on error
+
+@app.template_filter('process_academic_content')
+def process_academic_content(content):
+    """Process academic content to enhance formatting, supporting markdown and LaTeX.
+    
+    This filter ensures that academic papers are properly formatted with:
+    1. Proper Markdown rendering if content is in markdown format
+    2. LaTeX equations properly formatted for MathJax
+    3. Code blocks properly syntax-highlighted
+    4. Tables correctly formatted
+    
+    Args:
+        content: The academic content (paper draft, review, etc.)
+        
+    Returns:
+        Processed content with HTML markup for proper rendering
+    """
+    try:
+        import re
+        
+        # Skip processing if content is already HTML
+        if content.strip().startswith('<') and '<html' in content.lower():
+            return content
+        
+        # Add classes to LaTeX equations for better styling
+        # Inline equations: $...$
+        content = re.sub(r'(\$[^\$]+\$)', r'<span class="math inline">\1</span>', content)
+        
+        # Display equations: $$...$$
+        content = re.sub(r'(\$\$[^\$]+\$\$)', r'<div class="math display">\1</div>', content)
+        
+        # Add classes to code blocks for better styling
+        if '```' in content:
+            # Process code blocks with language specification: ```python
+            content = re.sub(
+                r'```(\w*)\n(.*?)\n```',
+                r'<pre class="code-block language-\1"><code>\2</code></pre>',
+                content, 
+                flags=re.DOTALL
+            )
+        
+        # Add citation formatting
+        content = re.sub(r'\[@([^\]]+)\]', r'<cite class="citation">[\1]</cite>', content)
+        
+        # If markdown package is available, use it for better formatting
+        try:
+            import markdown
+            html_content = markdown.markdown(
+                content,
+                extensions=[
+                    'markdown.extensions.extra',
+                    'markdown.extensions.codehilite',
+                    'markdown.extensions.tables'
+                ]
+            )
+            return html_content
+        except ImportError:
+            # Fallback: just return the content with basic enhancements
+            return content
+            
+    except Exception as e:
+        logger.error(f"Error processing academic content: {str(e)}")
+        # Return original content if processing fails
+        return content
 
 # Initialize SQLAlchemy with app
 db = SQLAlchemy(app)
@@ -203,7 +317,14 @@ def create_project():
         data = request.json
         topic = data.get('title')
         model_type = data.get('model_type', 'siliconflow')
-        research_source = data.get('research_source', 'none')
+        
+        # Handle multiple research sources
+        research_sources = data.get('research_sources', [])
+        if not research_sources:
+            research_source = 'none'
+        else:
+            research_source = ','.join(research_sources)
+        
         custom_model = data.get('custom_model', None)
         
         if not topic:
@@ -358,12 +479,18 @@ def api_get_projects():
         projects = PaperProject.query.order_by(PaperProject.updated_at.desc()).all()
         result = []
         for project in projects:
+            # Convert comma-separated research_source to array for frontend
+            research_sources = []
+            if project.research_source and project.research_source != 'none':
+                research_sources = [src.strip() for src in project.research_source.split(',')]
+                
             result.append({
                 'id': project.id,
                 'topic': project.topic,
                 'status': project.status,
                 'model_type': project.model_type,
                 'research_source': project.research_source,
+                'research_sources': research_sources,
                 'created_at': project.created_at.isoformat() if project.created_at else None,
                 'updated_at': project.updated_at.isoformat() if project.updated_at else None
             })
@@ -391,12 +518,18 @@ def api_get_project(project_id):
                 'created_at': version.created_at.isoformat() if version.created_at else None
             })
         
+        # Convert comma-separated research_source to array for frontend
+        research_sources = []
+        if project.research_source and project.research_source != 'none':
+            research_sources = [src.strip() for src in project.research_source.split(',')]
+            
         return jsonify({
             'id': project.id,
             'topic': project.topic,
             'status': project.status,
             'model_type': project.model_type,
             'research_source': project.research_source,
+            'research_sources': research_sources,
             'created_at': project.created_at.isoformat() if project.created_at else None,
             'updated_at': project.updated_at.isoformat() if project.updated_at else None,
             'versions': versions_data
@@ -588,99 +721,60 @@ def api_start_writing(project_id):
 
 @app.route('/api/projects/<int:project_id>/start-review', methods=['POST'])
 def api_start_review(project_id):
-    """Start the review phase for a project."""
+    """Start the review process for a project."""
     try:
-        project = PaperProject.query.get(project_id)
-        if not project:
-            return jsonify({"error": f"Project with ID {project_id} not found"}), 404
+        # Get the project
+        project = PaperProject.query.get_or_404(project_id)
         
-        # 检查是否已完成写作阶段
-        draft_version = PaperVersion.query.filter_by(
-            project_id=project_id, 
-            content_type='draft'
-        ).first()
-        
-        if not draft_version:
-            return jsonify({
-                "error": "Writing phase has not been completed for this project"
-            }), 400
-        
-        # 更新项目状态
-        project.status = "reviewing"
+        # Update project status
+        project.status = 'reviewing'
         db.session.commit()
         
-        # 记录活动
-        log_agent_activity(project_id, 'system', f'Starting review phase for project: {project.topic}')
+        # Log the start of the review
+        logger.info(f"[Project {project_id}] review: Initializing review agent")
         
-        # 异步执行审阅任务
-        # 在实际应用中应该使用Celery或其他异步任务队列
-        # 这里为了简化，直接在请求中执行
+        # Get the review agent
+        review_agent = get_review_agent()
+        
+        # Get the latest draft
+        latest_draft = PaperVersion.query.filter_by(
+            project_id=project_id,
+            content_type='draft'
+        ).order_by(PaperVersion.created_at.desc()).first()
+        if not latest_draft:
+            return jsonify({'error': 'No draft found for review'}), 400
+            
+        # Log the review process
+        logger.info(f"[Project {project_id}] review: Reviewing paper on topic: {project.topic}")
+        
+        # Get review feedback
+        feedback = review_agent.process(project.topic, latest_draft.content)
+        
+        # Ensure feedback is a string
+        if isinstance(feedback, list):
+            feedback = '\n'.join(feedback)
+        elif not isinstance(feedback, str):
+            feedback = str(feedback)
+        
+        # Save the review results
         try:
-            # 获取审阅代理
-            review_agent = get_agent_for_project(project, 'review')
-            
-            # 记录活动
-            log_agent_activity(project_id, 'review', 'Initializing review agent')
-            
-            # 执行审阅
-            log_agent_activity(project_id, 'review', f'Reviewing paper on topic: {project.topic}')
-            result = review_agent.process(project.topic, draft_version.content)
-            
-            # 记录活动
-            log_agent_activity(project_id, 'review', 'Review completed successfully')
-            
-            # 将审阅结果存储为一个版本
-            version = PaperVersion(
-                project_id=project_id,
-                version_number=1,
-                content_type='review',
-                content=result
-            )
-            db.session.add(version)
-            
-            # 更新项目状态
-            project.status = "review_complete"
-            db.session.commit()
-            
-            # 添加一条成功消息
-            message = AgentMessage(
-                project_id=project_id,
-                agent_type='review',
-                message_type='info',
-                message='Review completed successfully'
-            )
-            db.session.add(message)
-            db.session.commit()
-            
-            return jsonify({
-                "status": "success",
-                "message": "Review started successfully"
-            })
-            
+            save_version(project_id, 'review', feedback)
         except Exception as e:
             logger.error(f"Error during review: {str(e)}")
+            return jsonify({'error': f'Error saving review: {str(e)}'}), 500
             
-            # 添加一条错误消息
-            message = AgentMessage(
-                project_id=project_id,
-                agent_type='review',
-                message_type='error',
-                message=f'Error during review: {str(e)}'
-            )
-            db.session.add(message)
-            
-            # 更新项目状态
-            project.status = "review_failed"
-            db.session.commit()
-            
-            return jsonify({
-                "status": "error",
-                "error": str(e)
-            }), 500
-            
+        # Update project status
+        project.status = 'review_complete'
+        db.session.commit()
+        
+        # Log completion
+        logger.info(f"[Project {project_id}] review: Review completed successfully")
+        
+        return jsonify({'status': 'success', 'message': 'Review completed successfully'})
+        
     except Exception as e:
         logger.error(f"Error starting review: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'error': f'Error starting review: {str(e)}'}), 500
 
 @app.route('/api/projects/<int:project_id>/start-multi-agent', methods=['POST'])
 def api_start_multi_agent(project_id):
@@ -778,6 +872,19 @@ def api_start_multi_agent(project_id):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/projects/<int:project_id>/start-interactive-multi-agent', methods=['POST'])
+def api_start_interactive_multi_agent_legacy(project_id):
+    """[DEPRECATED] 请使用 /api/projects/<int:project_id>/start_interactive_multi_agent
+    
+    启动交互式多代理协作流程，在监督Agent的协调下完成研究、写作、审阅和修订
+    
+    这个API会启动一个交互式协作工作流，由监督代理协调整个过程，研究代理查找相关文献，
+    写作代理根据研究成果撰写论文，审阅代理对初稿进行审阅并提供建议，监督代理评估审阅意见，
+    决定是让写作代理接受修改建议还是让审阅代理提供更好的反馈。最终在审阅代理满意后完成论文。
+    """
+    # Redirect to the new route with underscore
+    return api_start_interactive_multi_agent(project_id)
+
+@app.route('/api/projects/<int:project_id>/start_interactive_multi_agent', methods=['POST'])
 def api_start_interactive_multi_agent(project_id):
     """启动交互式多代理协作流程，在监督Agent的协调下完成研究、写作、审阅和修订
     
@@ -786,532 +893,305 @@ def api_start_interactive_multi_agent(project_id):
     决定是让写作代理接受修改建议还是让审阅代理提供更好的反馈。最终在审阅代理满意后完成论文。
     """
     try:
-        # 获取项目
+        # Get project
         project = PaperProject.query.get_or_404(project_id)
         
-        # 阻止重复处理
-        if project.status == "completed":
-            return jsonify({"error": "项目已完成"}), 400
-        
-        # 更新项目状态为处理中
-        project.status = "interactive_processing"
-        db.session.commit()
-        
-        # 记录开始交互式多代理处理
-        log_agent_activity(project_id, 'system', f'开始增强版交互式多代理协作流程：监督 → 研究 → 写作 → 审阅 → 交流 → 迭代修订')
-        
-        # 初始化代理实例
-        supervisor_agent = get_agent_for_project(project, 'supervisor')
-        research_agent = get_agent_for_project(project, 'research')
-        writing_agent = get_agent_for_project(project, 'writing')
-        review_agent = get_agent_for_project(project, 'review')
-        communication_agent = CommunicationAgent(model_type=project.model_type)
-        
-        # 创建代理ID和映射，用于通信
-        agent_ids = {
-            'supervisor': 'sup_1',
-            'research': 'res_1',
-            'writing': 'wri_1',
-            'review': 'rev_1',
-            'communication': 'com_1'
+        # Initialize status tracking for this project
+        agent_status[project_id] = {
+            'mcp': {'status': 'Initializing', 'current_task': 'Starting up the multi-agent process'},
+            'research': {'status': 'Idle', 'current_task': 'Waiting for instructions'},
+            'writing': {'status': 'Idle', 'current_task': 'Waiting for research results'},
+            'review': {'status': 'Idle', 'current_task': 'Waiting for draft'}
         }
         
-        agents = {
-            agent_ids['supervisor']: supervisor_agent,
-            agent_ids['research']: research_agent,
-            agent_ids['writing']: writing_agent,
-            agent_ids['review']: review_agent
-        }
+        # Initialize interactions
+        agent_interactions[project_id] = []
         
-        # 在通信代理中注册所有代理
-        log_agent_activity(project_id, 'communication', f'注册协作代理')
-        for agent_type, agent_id in agent_ids.items():
-            if agent_type != 'communication':
-                communication_agent.register_agent(
-                    agent_id=agent_id,
-                    agent_type=agent_type,
-                    description=agents[agent_id].description if hasattr(agents[agent_id], 'description') else f"{agent_type.capitalize()} Agent"
-                )
+        # Initialize logs
+        agent_logs[project_id] = []
         
-        # 初始化各阶段结果
-        research_result = None
-        paper_draft = None
-        review_feedback = None
-        final_paper = None
+        # Add initial log
+        add_agent_log(project_id, 'system', 'Starting interactive multi-agent process')
         
-        # 记录每次迭代的版本ID
-        version_history = {
-            "research": [],
-            "draft": [],
-            "review": [],
-            "final": []
-        }
+        # Start the multi-agent process in a background thread to not block the response
+        import threading
+        thread = threading.Thread(target=run_interactive_multi_agent_process, args=(project_id,))
+        thread.daemon = True
+        thread.start()
         
-        # 迭代计数
-        iteration = 0
-        max_iterations = 3  # 防止无限循环
+        return jsonify({
+            'status': 'success',
+            'message': 'Interactive multi-agent process started'
+        })
         
-        # 错误计数
-        error_count = 0
-        max_errors = 3
-        
-        # 开始迭代流程
-        while iteration < max_iterations:
+    except Exception as e:
+        logger.error(f"Error starting interactive multi-agent process: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+def run_interactive_multi_agent_process(project_id):
+    """Run the interactive multi-agent process in background."""
+    try:
+        # Get project
+        with app.app_context():
+            project = PaperProject.query.get(project_id)
+            if not project:
+                add_agent_log(project_id, 'system', 'Error: Project not found', is_error=True)
+                return
+            
+            # Update MCP status
+            update_agent_status(project_id, 'mcp', 'Working', 'Coordinating the research process')
+            add_agent_log(project_id, 'mcp', f'Starting multi-agent workflow for topic: {project.topic}')
+            add_agent_interaction(project_id, 'MCP', 'Research', f'Requesting research on topic: {project.topic}')
+            
+            # PHASE 1: Research
+            update_agent_status(project_id, 'research', 'Working', f'Researching topic: {project.topic}')
+            add_agent_log(project_id, 'research', f'Starting research on topic: {project.topic}')
+            
             try:
-                iteration += 1
-                log_agent_activity(project_id, 'system', f'开始第 {iteration} 轮迭代')
+                research_agent = get_agent_for_project(project, 'research')
+                research_result = research_agent.process(project.topic)
                 
-                # 步骤1: 监督代理决定下一步操作
-                log_agent_activity(project_id, 'supervisor', f'评估当前状态并分配任务')
-                supervisor_decision = supervisor_agent.process(
-                    project.topic, 
-                    research_result, 
-                    paper_draft, 
-                    review_feedback
-                )
+                # Save research results
+                save_version(project_id, "research", research_result)
                 
-                # 确保监督代理返回了有效的决策
-                if not supervisor_decision or not isinstance(supervisor_decision, dict) or "action" not in supervisor_decision:
-                    log_agent_activity(project_id, 'system', f'监督代理返回了无效的决策: {supervisor_decision}')
-                    raise Exception(f"Invalid supervisor decision: {supervisor_decision}")
+                update_agent_status(project_id, 'research', 'Complete', 'Research completed')
+                add_agent_log(project_id, 'research', 'Research phase completed successfully')
+                add_agent_interaction(project_id, 'Research', 'MCP', 'Research completed, sending results')
                 
-                log_agent_activity(project_id, 'supervisor', f'决定: {supervisor_decision["action"]}', 
-                                details=supervisor_decision.get("reasoning", ""))
-                
-                # 步骤2: 根据监督代理的决定执行相应操作
-                if supervisor_decision["action"] == "research":
-                    # 研究阶段
-                    log_agent_activity(project_id, 'supervisor', f'指示研究代理收集资料', 
-                                      details=supervisor_decision.get("instructions", ""))
-                    
-                    # 监督代理向研究代理发送消息
-                    communication_agent.send_message(
-                        agent_ids['supervisor'],
-                        agent_ids['research'],
-                        f"请对主题'{project.topic}'进行研究。\n\n{supervisor_decision.get('instructions', '')}",
-                        "task_assignment"
-                    )
-                    
-                    log_agent_activity(project_id, 'research', f'开始收集与"{project.topic}"相关的论文')
-                    research_result = research_agent.process(project.topic)
-                    
-                    # 研究代理向监督代理报告结果
-                    communication_agent.send_message(
-                        agent_ids['research'],
-                        agent_ids['supervisor'],
-                        f"我已完成关于'{project.topic}'的研究工作。",
-                        "task_completion"
-                    )
-                    
-                    # 将研究结果存储为一个版本
-                    research_version = PaperVersion(
-                        project_id=project_id,
-                        version_number=iteration,
-                        content_type='research',
-                        content=research_result
-                    )
-                    db.session.add(research_version)
-                    db.session.commit()
-                    version_history["research"].append(research_version.id)
-                    
-                    log_agent_activity(project_id, 'research', f'研究完成，保存结果到版本ID:{research_version.id}')
-                    
-                elif supervisor_decision["action"] == "write":
-                    # 写作阶段
-                    is_revision = supervisor_decision.get("decision") == "revise"
-                    
-                    if is_revision:
-                        log_agent_activity(project_id, 'supervisor', f'指示写作代理修改论文', 
-                                        details=supervisor_decision.get("evaluation", ""))
-                        
-                        # 监督代理向写作代理发送修改指示
-                        communication_agent.send_message(
-                            agent_ids['supervisor'],
-                            agent_ids['writing'],
-                            f"请根据审阅意见修改'{project.topic}'论文。\n\n{supervisor_decision.get('evaluation', '')}",
-                            "revision_request"
-                        )
-                        
-                        # 获取最新的论文和审阅意见
-                        latest_draft = PaperVersion.query.get(version_history["draft"][-1])
-                        latest_review = PaperVersion.query.get(version_history["review"][-1])
-                        
-                        log_agent_activity(project_id, 'writing', f'开始根据审阅意见修改论文')
-                        
-                        # 处理审阅内容 - 如果存储为JSON字符串，解析为对象
-                        review_content = latest_review.content
-                        try:
-                            # 尝试解析为JSON对象（如果是JSON字符串）
-                            if isinstance(review_content, str) and (
-                                review_content.startswith('[') or 
-                                review_content.startswith('{')
-                            ):
-                                review_content = json.loads(review_content)
-                        except json.JSONDecodeError:
-                            # 如果不是有效的JSON，保持原样
-                            logger.warning(f"审阅内容解析为JSON失败，使用原始内容")
-                        
-                        paper_draft = writing_agent.revise_draft(latest_draft.content, review_content)
-                        
-                        # 写作代理向审阅代理发送修改后的论文
-                        communication_agent.send_message(
-                            agent_ids['writing'],
-                            agent_ids['review'],
-                            f"我已根据您的审阅意见修改了论文。",
-                            "revision_completed"
-                        )
-                        
-                        # 写作代理向监督代理报告完成修改
-                        communication_agent.send_message(
-                            agent_ids['writing'],
-                            agent_ids['supervisor'],
-                            f"我已完成论文修改工作。",
-                            "task_completion"
-                        )
-                    else:
-                        log_agent_activity(project_id, 'supervisor', f'指示写作代理撰写论文', 
-                                        details=supervisor_decision.get("instructions", ""))
-                        
-                        # 监督代理向写作代理发送写作指示
-                        communication_agent.send_message(
-                            agent_ids['supervisor'],
-                            agent_ids['writing'],
-                            f"请根据研究结果撰写关于'{project.topic}'的论文。\n\n{supervisor_decision.get('instructions', '')}",
-                            "task_assignment"
-                        )
-                        
-                        log_agent_activity(project_id, 'writing', f'开始撰写论文')
-                        # 获取最新的研究结果
-                        latest_research = PaperVersion.query.get(version_history["research"][-1])
-                        paper_draft = writing_agent.process(project.topic, latest_research.content)
-                        
-                        # 写作代理向审阅代理发送完成的论文
-                        communication_agent.send_message(
-                            agent_ids['writing'],
-                            agent_ids['review'],
-                            f"我已完成'{project.topic}'论文的初稿。",
-                            "draft_completed"
-                        )
-                        
-                        # 写作代理向监督代理报告完成
-                        communication_agent.send_message(
-                            agent_ids['writing'],
-                            agent_ids['supervisor'],
-                            f"我已完成论文写作工作。",
-                            "task_completion"
-                        )
-                    
-                    # 将论文内容存储为一个版本
-                    draft_version = PaperVersion(
-                        project_id=project_id,
-                        version_number=len(version_history["draft"]) + 1,
-                        content_type='draft',
-                        content=paper_draft
-                    )
-                    db.session.add(draft_version)
-                    db.session.commit()
-                    version_history["draft"].append(draft_version.id)
-                    
-                    log_agent_activity(project_id, 'writing', f'写作完成，保存结果到版本ID:{draft_version.id}')
-                    
-                elif supervisor_decision["action"] == "review":
-                    # 审阅阶段
-                    log_agent_activity(project_id, 'supervisor', f'指示审阅代理评估论文', 
-                                      details=supervisor_decision.get("instructions", ""))
-                    
-                    # 监督代理向审阅代理发送审阅指示
-                    communication_agent.send_message(
-                        agent_ids['supervisor'],
-                        agent_ids['review'],
-                        f"请审阅关于'{project.topic}'的论文。\n\n{supervisor_decision.get('instructions', '')}",
-                        "task_assignment"
-                    )
-                    
-                    # 获取最新的论文草稿
-                    latest_draft = PaperVersion.query.get(version_history["draft"][-1])
-                    
-                    log_agent_activity(project_id, 'review', f'开始审阅论文')
-                    review_feedback = review_agent.process(project.topic, latest_draft.content)
-                    
-                    # 如果反馈不是字符串，将其转换为JSON字符串以便存储
-                    if not isinstance(review_feedback, str):
-                        review_feedback_str = json.dumps(review_feedback, ensure_ascii=False)
-                    else:
-                        review_feedback_str = review_feedback
-                    
-                    # 审阅代理向写作代理发送反馈
-                    feedback_message = review_feedback
-                    if isinstance(feedback_message, list):
-                        feedback_message = "\n".join([f"- {item}" for item in feedback_message])
-                    
-                    communication_agent.send_message(
-                        agent_ids['review'],
-                        agent_ids['writing'],
-                        f"我已完成论文审阅，有以下建议：\n\n{feedback_message}",
-                        "review_feedback"
-                    )
-                    
-                    # 审阅代理向监督代理报告完成
-                    communication_agent.send_message(
-                        agent_ids['review'],
-                        agent_ids['supervisor'],
-                        f"我已完成论文审阅工作。",
-                        "task_completion"
-                    )
-                    
-                    # 将审阅结果存储为一个版本
-                    review_version = PaperVersion(
-                        project_id=project_id,
-                        version_number=len(version_history["review"]) + 1,
-                        content_type='review',
-                        content=review_feedback_str
-                    )
-                    db.session.add(review_version)
-                    db.session.commit()
-                    version_history["review"].append(review_version.id)
-                    
-                    log_agent_activity(project_id, 'review', f'审阅完成，保存结果到版本ID:{review_version.id}')
-                    
-                elif supervisor_decision["action"] == "complete":
-                    # 完成论文
-                    log_agent_activity(project_id, 'supervisor', f'确认论文完成', 
-                                      details=supervisor_decision.get("evaluation", ""))
-                    
-                    # 获取最新的论文草稿作为最终版本
-                    latest_draft = PaperVersion.query.get(version_history["draft"][-1])
-                    final_paper = latest_draft.content
-                    
-                    # 监督代理向所有代理发送完成通知
-                    for agent_type, agent_id in agent_ids.items():
-                        if agent_type != 'supervisor' and agent_type != 'communication':
-                            communication_agent.send_message(
-                                agent_ids['supervisor'],
-                                agent_id,
-                                f"项目'{project.topic}'已完成。感谢您的贡献！",
-                                "project_completion"
-                            )
-                    
-                    # 将最终论文存储为一个版本
-                    final_version = PaperVersion(
-                        project_id=project_id,
-                        version_number=len(version_history["final"]) + 1,
-                        content_type='final',
-                        content=final_paper
-                    )
-                    db.session.add(final_version)
-                    db.session.commit()
-                    version_history["final"].append(final_version.id)
-                    
-                    # 更新项目状态为已完成
-                    project.status = "completed"
-                    db.session.commit()
-                    
-                    log_agent_activity(project_id, 'system', f'项目完成，最终版本ID:{final_version.id}')
-                    break
-                
-                # 在每轮结束后，让通信代理生成通信摘要
-                if iteration > 0:
-                    log_agent_activity(project_id, 'communication', f'生成第 {iteration} 轮协作通信摘要')
-                    comm_summary = communication_agent.process(
-                        request_type="generate_summary", 
-                        topic=project.topic
-                    )
-                    try:
-                        comm_summary_data = json.loads(comm_summary)
-                        log_agent_activity(project_id, 'communication', f'通信摘要', 
-                                          details=comm_summary_data.get('summary', '无法生成摘要'))
-                    except:
-                        log_agent_activity(project_id, 'communication', f'无法解析通信摘要')
-                
-                # 更新数据库
-                db.session.commit()
-            
             except Exception as e:
-                error_count += 1
-                logger.error(f"迭代 {iteration} 出错: {str(e)}")
-                log_agent_activity(project_id, 'system', f'迭代 {iteration} 出错: {str(e)}')
-                
-                if error_count >= max_errors:
-                    logger.error(f"达到最大错误次数 ({max_errors})，中止流程")
-                    log_agent_activity(project_id, 'system', f'达到最大错误次数，中止流程')
-                    project.status = "error"
-                    db.session.commit()
-                    
-                    # 添加一条错误消息
-                    message = AgentMessage(
-                        project_id=project_id,
-                        agent_type='system',
-                        message_type='error',
-                        message=f'多代理流程出现多次错误，已中止: {str(e)}'
-                    )
-                    db.session.add(message)
-                    db.session.commit()
-                    
-                    return jsonify({
-                        "status": "error",
-                        "error": f"Multiple errors occurred: {str(e)}"
-                    }), 500
-                
-                # 如果错误次数未达上限，继续下一轮迭代
-                continue
-        
-        # 如果达到最大迭代次数但未完成，也标记为完成
-        if iteration >= max_iterations and project.status != "completed":
-            # 获取最新的论文草稿作为最终版本
-            if version_history["draft"]:
-                latest_draft = PaperVersion.query.get(version_history["draft"][-1])
-                final_paper = latest_draft.content
-                
-                # 将最终论文存储为一个版本
-                final_version = PaperVersion(
-                    project_id=project_id,
-                    version_number=len(version_history["final"]) + 1,
-                    content_type='final',
-                    content=final_paper
-                )
-                db.session.add(final_version)
-                version_history["final"].append(final_version.id)
-                
-                # 更新项目状态为已完成
-                project.status = "completed"
-                db.session.commit()
-                
-                log_agent_activity(project_id, 'system', f'达到最大迭代次数，项目标记为完成，最终版本ID:{final_version.id}')
-            else:
-                project.status = "error"
-                db.session.commit()
-                log_agent_activity(project_id, 'system', f'达到最大迭代次数但无法生成最终论文，项目标记为错误')
-        
-        # 进行一次额外的协作总结
-        log_agent_activity(project_id, 'communication', f'生成最终协作总结')
-        try:
-            collaboration_summary = communication_agent.facilitate_collaboration(
-                project.topic,
-                agents,
-                max_rounds=1  # 只进行一轮总结性协作
-            )
+                update_agent_status(project_id, 'research', 'Error', f'Error: {str(e)}')
+                add_agent_log(project_id, 'research', f'Error during research: {str(e)}', is_error=True)
+                add_agent_interaction(project_id, 'Research', 'MCP', 'Error during research phase')
+                raise
             
-            if isinstance(collaboration_summary, str):
-                collaboration_summary = json.loads(collaboration_summary)
+            # Update MCP status
+            update_agent_status(project_id, 'mcp', 'Working', 'Processing research results')
+            add_agent_log(project_id, 'mcp', 'Research phase completed, initiating writing phase')
+            add_agent_interaction(project_id, 'MCP', 'Writing', f'Requesting paper draft based on research')
+            
+            # PHASE 2: Writing
+            update_agent_status(project_id, 'writing', 'Working', 'Writing paper draft based on research')
+            add_agent_log(project_id, 'writing', 'Starting paper draft writing')
+            
+            try:
+                writing_agent = get_agent_for_project(project, 'writing')
+                paper_draft = writing_agent.process(project.topic, research_result)
                 
-            if collaboration_summary.get('success'):
-                log_agent_activity(project_id, 'communication', f'协作总结', 
-                                  details=collaboration_summary.get('summary', '无法生成协作总结'))
-        except Exception as e:
-            log_agent_activity(project_id, 'communication', f'生成协作总结时出错: {str(e)}')
-        
-        return jsonify({
-            "status": "success",
-            "message": "多代理交互式流程完成",
-            "versions": version_history
-        })
-    except Exception as e:
-        logger.error(f"多代理流程出错: {str(e)}")
-        logger.error(traceback.format_exc())
-        try:
-            project.status = "error"
+                # Save draft
+                save_version(project_id, "draft", paper_draft)
+                
+                update_agent_status(project_id, 'writing', 'Complete', 'Draft completed')
+                add_agent_log(project_id, 'writing', 'Paper draft completed successfully')
+                add_agent_interaction(project_id, 'Writing', 'MCP', 'Paper draft completed, sending draft')
+                
+            except Exception as e:
+                update_agent_status(project_id, 'writing', 'Error', f'Error: {str(e)}')
+                add_agent_log(project_id, 'writing', f'Error during writing: {str(e)}', is_error=True)
+                add_agent_interaction(project_id, 'Writing', 'MCP', 'Error during writing phase')
+                raise
+            
+            # Update MCP status
+            update_agent_status(project_id, 'mcp', 'Working', 'Processing draft')
+            add_agent_log(project_id, 'mcp', 'Writing phase completed, initiating review phase')
+            add_agent_interaction(project_id, 'MCP', 'Review', f'Requesting review of paper draft')
+            
+            # PHASE 3: Review
+            update_agent_status(project_id, 'review', 'Working', 'Reviewing paper draft')
+            add_agent_log(project_id, 'review', 'Starting paper review')
+            
+            try:
+                review_agent = get_agent_for_project(project, 'review')
+                review_feedback = review_agent.process(project.topic, paper_draft)
+                
+                # Convert review feedback to string if it's not already
+                if not isinstance(review_feedback, str):
+                    review_feedback_str = json.dumps(review_feedback, ensure_ascii=False)
+                else:
+                    review_feedback_str = review_feedback
+                
+                # Save review
+                save_version(project_id, "review", review_feedback_str)
+                
+                update_agent_status(project_id, 'review', 'Complete', 'Review completed')
+                add_agent_log(project_id, 'review', 'Paper review completed successfully')
+                add_agent_interaction(project_id, 'Review', 'MCP', 'Review completed, sending feedback')
+                
+            except Exception as e:
+                update_agent_status(project_id, 'review', 'Error', f'Error: {str(e)}')
+                add_agent_log(project_id, 'review', f'Error during review: {str(e)}', is_error=True)
+                add_agent_interaction(project_id, 'Review', 'MCP', 'Error during review phase')
+                raise
+            
+            # Update MCP status
+            update_agent_status(project_id, 'mcp', 'Working', 'Processing review feedback')
+            add_agent_log(project_id, 'mcp', 'Review phase completed, initiating final revision')
+            add_agent_interaction(project_id, 'MCP', 'Writing', f'Requesting final revision based on review feedback')
+            
+            # PHASE 4: Final Revision
+            update_agent_status(project_id, 'writing', 'Working', 'Revising paper based on review')
+            add_agent_log(project_id, 'writing', 'Starting final revision')
+            
+            try:
+                # Get the writing agent again (or reuse if cached)
+                writing_agent = get_agent_for_project(project, 'writing')
+                final_paper = writing_agent.revise_draft(paper_draft, review_feedback)
+                
+                # Save final version
+                save_version(project_id, "final", final_paper)
+                
+                update_agent_status(project_id, 'writing', 'Complete', 'Final revision completed')
+                add_agent_log(project_id, 'writing', 'Final paper revision completed successfully')
+                add_agent_interaction(project_id, 'Writing', 'MCP', 'Final revision completed, sending final paper')
+                
+            except Exception as e:
+                update_agent_status(project_id, 'writing', 'Error', f'Error: {str(e)}')
+                add_agent_log(project_id, 'writing', f'Error during final revision: {str(e)}', is_error=True)
+                add_agent_interaction(project_id, 'Writing', 'MCP', 'Error during final revision phase')
+                raise
+            
+            # Mark project as completed
+            project.status = "completed"
             db.session.commit()
-            log_agent_activity(project_id, 'system', f'多代理流程出错: {str(e)}')
-        except:
-            pass
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/logs', methods=["GET"])
-def api_logs():
-    """获取应用日志的API"""
-    try:
-        log_file = "app.log"
-        if os.path.exists(log_file):
-            with open(log_file, "r", encoding="utf-8") as f:
-                logs = f.readlines()
-            return jsonify({
-                "status": "success",
-                "logs": logs[-100:]  # 返回最后100行日志
-            })
-        else:
-            return jsonify({
-                "status": "success",
-                "logs": ["No log file found"]
-            })
-    
-    except Exception as e:
-        logger.error(f"Error getting logs: {str(e)}")
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
-
-@app.route("/api/test-connection", methods=["GET"])
-def api_test_connection():
-    """Test connections to various APIs."""
-    try:
-        # 测试研究代理连接
-        research_agent = get_research_agent()
-        if research_agent:
-            research_result = research_agent.test_connection()
-        else:
-            research_result = {"status": "error", "message": "研究代理初始化失败"}
-        
-        # 测试写作代理连接
-        writing_agent = get_writing_agent()
-        if writing_agent:
-            writing_result = writing_agent.test_connection()
-        else:
-            writing_result = {"status": "error", "message": "写作代理初始化失败"}
-        
-        # 测试审阅代理连接
-        review_agent = get_review_agent()
-        if review_agent:
-            review_result = review_agent.test_connection()
-        else:
-            review_result = {"status": "error", "message": "审阅代理初始化失败"}
             
-        # 测试监督代理连接
-        supervisor_agent = get_supervisor_agent()
-        if supervisor_agent:
-            supervisor_result = supervisor_agent.test_connection()
-        else:
-            supervisor_result = {"status": "error", "message": "监督代理初始化失败"}
-        
-        return jsonify({
-            "status": "success",
-            "research": research_result,
-            "writing": writing_result,
-            "review": review_result,
-            "supervisor": supervisor_result
-        })
+            # Update MCP status
+            update_agent_status(project_id, 'mcp', 'Complete', 'All phases completed successfully')
+            add_agent_log(project_id, 'mcp', 'Multi-agent workflow completed successfully')
+            add_agent_log(project_id, 'system', 'Interactive multi-agent process completed')
+            
     except Exception as e:
-        logger.error(f"Error testing connections: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-# 静态文件服务
-@app.route("/static/<path:path>")
-def serve_static(path):
-    """提供静态文件的API"""
-    return send_from_directory("static", path)
-
-# 版本保存和获取辅助函数
-def save_version(project_id, content_type, content):
-    """保存一个新的版本
-    
-    Args:
-        project_id: 项目ID
-        content_type: 内容类型 (research, draft, review, final)
-        content: 内容
+        logger.error(f"Error in interactive multi-agent process: {str(e)}")
+        traceback.print_exc()
         
-    Returns:
-        保存的版本实例
-    """
-    # 获取当前该类型的最大版本号
-    max_version = db.session.query(db.func.max(PaperVersion.version_number)) \
-                  .filter_by(project_id=project_id, content_type=content_type).scalar() or 0
+        with app.app_context():
+            # Update project status to failed
+            project = PaperProject.query.get(project_id)
+            if project:
+                project.status = "failed"
+                db.session.commit()
+            
+            # Update MCP status
+            update_agent_status(project_id, 'mcp', 'Error', f'Process failed: {str(e)}')
+            add_agent_log(project_id, 'system', f'Process failed with error: {str(e)}', is_error=True)
+
+def update_agent_status(project_id, agent_id, status, current_task=None):
+    """Update the status of an agent in the interactive process."""
+    if project_id not in agent_status:
+        agent_status[project_id] = {}
     
-    # 创建新版本
+    if agent_id not in agent_status[project_id]:
+        agent_status[project_id][agent_id] = {}
+    
+    agent_status[project_id][agent_id]['status'] = status
+    
+    if current_task:
+        agent_status[project_id][agent_id]['current_task'] = current_task
+
+def add_agent_interaction(project_id, from_agent, to_agent, message):
+    """Add an interaction between agents."""
+    if project_id not in agent_interactions:
+        agent_interactions[project_id] = []
+    
+    agent_interactions[project_id].append({
+        'from': from_agent,
+        'to': to_agent,
+        'message': message,
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    })
+
+def add_agent_log(project_id, agent, message, is_error=False):
+    """Add a log entry for an agent."""
+    if project_id not in agent_logs:
+        agent_logs[project_id] = []
+    
+    log_type = 'error' if is_error else 'info'
+    
+    agent_logs[project_id].append({
+        'agent': agent,
+        'message': message,
+        'type': log_type,
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    })
+
+@app.route('/api/projects/<int:project_id>/multi_agent_status', methods=['GET'])
+def api_get_multi_agent_status(project_id):
+    """Get the current status of all agents in the interactive process."""
+    project = PaperProject.query.get_or_404(project_id)
+    
+    # Get agent status
+    status = agent_status.get(project_id, {})
+    
+    # Get agent interactions
+    interactions = agent_interactions.get(project_id, [])
+    
+    # Check if process is complete
+    is_complete = all(agent.get('status') == 'Complete' for agent in status.values()) if status else False
+    
+    return jsonify({
+        'agents': status,
+        'interactions': interactions,
+        'is_complete': is_complete
+    })
+
+@app.route('/api/projects/<int:project_id>/multi_agent_logs', methods=['GET'])
+def api_get_multi_agent_logs(project_id):
+    """Get the logs for the interactive multi-agent process."""
+    project = PaperProject.query.get_or_404(project_id)
+    
+    # Get agent logs
+    logs = agent_logs.get(project_id, [])
+    
+    return jsonify({
+        'logs': logs
+    })
+
+def get_latest_version(project_id, content_type):
+    """Get the latest version of a given content type for a project."""
+    return PaperVersion.query.filter_by(
+        project_id=project_id, 
+        content_type=content_type
+    ).order_by(PaperVersion.version_number.desc()).first()
+
+def get_latest_version_id(project_id, content_type):
+    """Get the ID of the latest version for a given project and content type."""
+    try:
+        latest_version = PaperVersion.query.filter_by(
+            project_id=project_id, 
+            content_type=content_type
+        ).order_by(PaperVersion.version_number.desc()).first()
+        
+        if latest_version:
+            return latest_version.id
+        else:
+            return None
+    except Exception as e:
+        logger.error(f"Error getting latest version ID: {str(e)}")
+        return None
+
+def save_version(project_id, content_type, content):
+    """Save a version of paper content."""
+    # Get the project
+    project = PaperProject.query.get(project_id)
+    if not project:
+        logger.error(f"Project {project_id} not found")
+        return None
+        
+    # Get the latest version number
+    latest_version = PaperVersion.query.filter_by(
+        project_id=project_id, 
+        content_type=content_type
+    ).order_by(PaperVersion.version_number.desc()).first()
+    
+    version_number = 1
+    if latest_version:
+        version_number = latest_version.version_number + 1
+        
+    # Create a new version
     version = PaperVersion(
         project_id=project_id,
         content_type=content_type,
-        version_number=max_version + 1,
-        content=content
+        content=content,
+        version_number=version_number
     )
     
     db.session.add(version)
@@ -1319,22 +1199,197 @@ def save_version(project_id, content_type, content):
     
     return version
 
-def get_latest_version_id(project_id, content_type):
-    """获取指定项目和内容类型的最新版本ID
-    
-    Args:
-        project_id: 项目ID
-        content_type: 内容类型 (research, draft, review, final)
+@app.route('/api/projects/<int:project_id>/delete', methods=['POST'])
+def api_delete_project(project_id):
+    """Delete a project and all its associated data."""
+    try:
+        # Get the project
+        project = PaperProject.query.get_or_404(project_id)
         
-    Returns:
-        最新版本ID，如果不存在则返回None
-    """
-    latest = PaperVersion.query \
-            .filter_by(project_id=project_id, content_type=content_type) \
-            .order_by(PaperVersion.version_number.desc()) \
-            .first()
-    
-    return latest.id if latest else None
+        logger.info(f"[Project {project_id}] Deleting project: {project.topic}")
+        
+        try:
+            # Delete the project - cascade will automatically delete related records
+            db.session.delete(project)
+            db.session.commit()
+            
+            logger.info(f"[Project {project_id}] Project deleted successfully")
+            return jsonify({
+                'status': 'success',
+                'message': 'Project deleted successfully'
+            })
+            
+        except Exception as e:
+            logger.error(f"[Project {project_id}] Error deleting project: {str(e)}")
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': f'Error deleting project: {str(e)}'
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error in delete project endpoint: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Error deleting project: {str(e)}'
+        }), 500
+
+@app.route('/api/projects/<int:project_id>/export', methods=['GET'])
+def api_export_paper(project_id):
+    """Export a paper in HTML or PDF format"""
+    try:
+        # Get the requested export format, default is HTML
+        export_format = request.args.get('format', 'html').lower()
+        
+        # Check if PDF is requested but not supported
+        PDF_SUPPORT = False
+        try:
+            from weasyprint import HTML
+            from io import BytesIO
+            PDF_SUPPORT = True
+        except ImportError:
+            PDF_SUPPORT = False
+            
+        if export_format == 'pdf' and not PDF_SUPPORT:
+            logger.warning("PDF export was requested, but the system doesn't support PDF generation. Falling back to HTML format.")
+            export_format = 'html'
+        
+        # Get the project
+        project = PaperProject.query.get_or_404(project_id)
+        
+        # Get the latest version of the paper
+        paper_version = PaperVersion.query.filter_by(
+            project_id=project_id
+        ).order_by(PaperVersion.version_number.desc()).first()
+        
+        if not paper_version:
+            return jsonify({'status': 'error', 'error': 'No paper version found'}), 404
+        
+        # Convert Markdown to HTML
+        import markdown2
+        html_content = markdown2.markdown(paper_version.content)
+        
+        # Create a complete HTML document with styling
+        styled_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>{project.topic}</title>
+            <style>
+                body {{
+                    font-family: 'Times New Roman', Times, serif;
+                    line-height: 1.6;
+                    margin: 3cm;
+                    max-width: 800px;
+                    margin-left: auto;
+                    margin-right: auto;
+                    color: #333;
+                }}
+                h1, h2, h3, h4, h5, h6 {{
+                    color: #000;
+                    margin-top: 1.5em;
+                    margin-bottom: 0.5em;
+                }}
+                h1 {{
+                    font-size: 24pt;
+                    text-align: center;
+                    font-weight: bold;
+                    margin-bottom: 1.5em;
+                }}
+                h2 {{
+                    font-size: 18pt;
+                    border-bottom: 1px solid #ddd;
+                    padding-bottom: 0.2em;
+                }}
+                h3 {{ font-size: 16pt; }}
+                h4 {{ font-size: 14pt; }}
+                p {{
+                    margin-bottom: 1em;
+                    text-align: justify;
+                }}
+                .abstract {{
+                    font-style: italic;
+                    margin: 2em 0;
+                    padding: 1em;
+                    border: 1px solid #ddd;
+                    background-color: #f9f9f9;
+                }}
+                table {{
+                    border-collapse: collapse;
+                    width: 100%;
+                    margin: 1em 0;
+                }}
+                th, td {{
+                    border: 1px solid #ddd;
+                    padding: 8px;
+                }}
+                th {{
+                    padding-top: 12px;
+                    padding-bottom: 12px;
+                    text-align: left;
+                    background-color: #f2f2f2;
+                }}
+                img {{
+                    max-width: 100%;
+                    height: auto;
+                    display: block;
+                    margin: 1em auto;
+                }}
+                .citation {{
+                    font-size: 10pt;
+                }}
+                .references {{
+                    margin-top: 2em;
+                    border-top: 1px solid #ddd;
+                    padding-top: 1em;
+                }}
+            </style>
+        </head>
+        <body>
+            {html_content}
+        </body>
+        </html>
+        """
+        
+        # Return HTML or PDF based on the requested format
+        if export_format == 'html':
+            # Return HTML
+            from flask import Response
+            return Response(
+                styled_html,
+                mimetype='text/html',
+                headers={'Content-Disposition': f'attachment; filename={project.topic}.html'}
+            )
+        elif export_format == 'pdf' and PDF_SUPPORT:
+            try:
+                # Try to generate PDF
+                pdf = HTML(string=styled_html).write_pdf()
+                
+                # Return PDF
+                from flask import send_file
+                return send_file(
+                    BytesIO(pdf),
+                    mimetype='application/pdf',
+                    as_attachment=True,
+                    download_name=f"{project.topic}.pdf"
+                )
+            except Exception as e:
+                # If PDF generation fails, log the error and return HTML
+                logger.error(f"PDF generation failed: {str(e)}")
+                logger.info("Falling back to HTML format")
+                
+                return Response(
+                    styled_html,
+                    mimetype='text/html',
+                    headers={'Content-Disposition': f'attachment; filename={project.topic}.html'}
+                )
+        else:
+            # Unsupported format
+            return jsonify({'status': 'error', 'error': 'Unsupported format'}), 400
+    except Exception as e:
+        logger.error(f"Error exporting paper: {str(e)}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, host="127.0.0.1", port=5000)

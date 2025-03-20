@@ -4,9 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
-venv/
-ENV/
 build/
 develop-eggs/
 dist/
@@ -18,35 +15,64 @@ lib64/
 parts/
 sdist/
 var/
+wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
-# Database
+# Flask
+instance/
+.webassets-cache
 *.db
 *.sqlite3
-*.sqlite
 
-# Environment variables
+# Virtual Environment
+venv/
+env/
+ENV/
 .env
 
-# Cache
-cache/
-
-# IDE
+# IDE specific files
 .idea/
 .vscode/
 *.swp
 *.swo
+.DS_Store
 
 # Logs
 logs/
 *.log
 
-# Project specific
-instance/
-.uv/
-uv.lock
+# Application specific
+uploads/
+downloads/
+temp/
+
+# Dependency directories
+node_modules/
+
+# Coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+
+# Database backups
+*.bak
+*.dump
+
+# Large media files
+*.mp4
+*.tiff
+*.avi
+*.flv
+*.mov
+*.wmv
 
 # API keys and sensitive information
 agents/key

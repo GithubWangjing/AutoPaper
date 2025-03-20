@@ -4,6 +4,7 @@ import logging
 import requests
 from abc import ABC, abstractmethod
 from dotenv import load_dotenv
+from openai import OpenAI
 
 # Load .env file if it exists
 load_dotenv()
@@ -138,8 +139,21 @@ class BaseAgent(ABC):
                             "maxOutputTokens": self.max_tokens,
                         }
                     }
+                elif self.model_type == "openai":
+                    # Use the OpenAI client instead of direct API call for OpenAI
+                    client = OpenAI(api_key=self.api_key)
+                    
+                    response = client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens
+                    )
+                    
+                    # Return the response directly
+                    return response.choices[0].message.content.strip()
                 else:
-                    # OpenAI兼容格式 (适用于OpenAI、SiliconFlow、GLM等)
+                    # OpenAI兼容格式 (适用于SiliconFlow、GLM等)
                     headers["Authorization"] = f"Bearer {self.api_key}"
                     
                     data = {

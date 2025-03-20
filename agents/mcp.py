@@ -4,7 +4,8 @@ import json
 import logging
 import requests
 from openai import OpenAI
-from openai import RateLimitError, APIError, APITimeoutError
+# Import the full openai module for error handling
+import openai
 from .google_scholar import GoogleScholar
 from .scholarly_google import ScholarlyGoogle
 
@@ -23,40 +24,78 @@ class MCP:
         
         # Initialize Google Scholar clients
         # Try to use ScholarlyGoogle by default (no API key needed)
-        self.scholarly_google = ScholarlyGoogle(
-            timeout=timeout,
-            max_retries=max_retries,
-            base_delay=base_delay
-        )
-        
-        # Fall back to SerpAPI if API key is provided
-        self.google_scholar = None
-        if self.api_key:
-            self.google_scholar = GoogleScholar(
-                api_key=self.api_key,
+        try:
+            self.scholarly_google = ScholarlyGoogle(
                 timeout=timeout,
                 max_retries=max_retries,
                 base_delay=base_delay
             )
+        except Exception as e:
+            logger.error(f"Error initializing ScholarlyGoogle: {str(e)}")
+            self.scholarly_google = None
+        
+        # Fall back to SerpAPI if API key is provided
+        self.google_scholar = None
+        if self.api_key:
+            try:
+                self.google_scholar = GoogleScholar(
+                    api_key=self.api_key,
+                    timeout=timeout,
+                    max_retries=max_retries,
+                    base_delay=base_delay
+                )
+            except Exception as e:
+                logger.error(f"Error initializing GoogleScholar: {str(e)}")
+                self.google_scholar = None
             
         # Initialize OpenAI client for compatibility with existing code
-        self.client = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY", ""),
-            timeout=timeout,
-            max_retries=max_retries
-        )
+        # OpenAI v1.0.0 doesn't support additional parameters
+        try:
+            self.client = OpenAI(
+                api_key=os.getenv("OPENAI_API_KEY", "")
+                # No other parameters should be passed here
+            )
+        except Exception as e:
+            logger.error(f"Error initializing OpenAI client: {str(e)}")
+            self.client = None
         
     @property
     def chat(self):
         """Get the chat completions interface."""
+        if not self.client:
+            logger.error("OpenAI client is not available, cannot access chat")
+            raise ValueError("OpenAI client not initialized")
         return self.client.chat
         
     def chat_completions_create(self, **kwargs):
         """Create a chat completion with OpenAI API."""
-        return self.client.chat.completions.create(**kwargs)
+        # Check if client was properly initialized
+        if not self.client:
+            logger.error("OpenAI client is not available, chat completion request failed")
+            raise ValueError("OpenAI client not initialized")
+            
+        # Remove any parameters not supported by OpenAI v1.0.0
+        if 'proxies' in kwargs:
+            kwargs.pop('proxies')
+        if 'request_timeout' in kwargs:
+            kwargs.pop('request_timeout')
+        if 'request_id' in kwargs:
+            kwargs.pop('request_id')
+        if 'retry' in kwargs:
+            kwargs.pop('retry')
+        
+        try:    
+            # Use the v1.0.0 API format
+            return self.client.chat.completions.create(**kwargs)
+        except Exception as e:
+            logger.error(f"OpenAI chat completion error: {str(e)}")
+            raise
         
     def chat_completions(self):
         """Get the chat completions interface."""
+        if not self.client:
+            logger.error("OpenAI client is not available, cannot access chat completions")
+            raise ValueError("OpenAI client not initialized")
         return self.client.chat.completions
         
     def search_papers(self, query, max_results=10):
@@ -71,13 +110,16 @@ class MCP:
         """
         try:
             # First try using the scholarly library (no API key needed)
-            try:
-                logger.info("Trying to search papers using scholarly (no API key required)")
-                results = self.scholarly_google.search(query, max_results=max_results)
-                if results.get('papers'):
-                    return results
-            except Exception as e:
-                logger.warning(f"Scholarly search failed: {str(e)}. Trying alternative method...")
+            if self.scholarly_google:
+                try:
+                    logger.info("Trying to search papers using scholarly (no API key required)")
+                    results = self.scholarly_google.search(query, max_results=max_results)
+                    if results.get('papers'):
+                        return results
+                except Exception as e:
+                    logger.warning(f"Scholarly search failed: {str(e)}. Trying alternative method...")
+            else:
+                logger.warning("ScholarlyGoogle client is not available, skipping this search method")
             
             # If scholarly fails and we have an API key, try using SerpAPI
             if self.google_scholar:
@@ -85,7 +127,14 @@ class MCP:
                 results = self.google_scholar.search(query, max_results=max_results)
                 return results
             else:
-                raise ValueError("No working Google Scholar search method available")
+                logger.warning("No Google Scholar API client available")
+                return {
+                    "papers": [],
+                    "error": "No working Google Scholar search method available",
+                    "query": query,
+                    "timestamp": time.time(),
+                    "source": "google_scholar_not_available"
+                }
                 
         except Exception as e:
             logger.error(f"Error searching for papers: {str(e)}")

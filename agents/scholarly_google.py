@@ -25,6 +25,12 @@ class ScholarlyGoogle:
         self.max_retries = max_retries
         self.base_delay = base_delay
         
+        # Configure scholarly to not use proxies to avoid compatibility issues with OpenAI 1.0.0
+        try:
+            scholarly.use_proxy(None, None)
+        except Exception as e:
+            logger.warning(f"Failed to configure proxy settings for scholarly: {str(e)}")
+        
     def search(self, query, max_results=10):
         """Search Google Scholar for academic papers on a topic.
         
@@ -89,6 +95,7 @@ class ScholarlyGoogle:
                 logger.error(f"Google Scholar search with scholarly failed (attempt {attempt+1}): {str(e)}")
                 if attempt < self.max_retries - 1:
                     sleep_time = self.base_delay * (2 ** attempt)  # Exponential backoff
+                    logger.info(f"Waiting {sleep_time} seconds before retry")
                     time.sleep(sleep_time)
                 else:
                     logger.error(f"Max retries exceeded for Google Scholar scholarly search")

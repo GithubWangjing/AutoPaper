@@ -55,36 +55,83 @@ class WritingAgent(BaseAgent):
         # Extract information from research data
         summary = research_data.get("summary", "")
         papers = research_data.get("papers", [])
-        content = research_data.get("content", "")
+        analysis = research_data.get("analysis", {})
+        key_findings = analysis.get("key_findings", [])
+        methodologies = analysis.get("methodologies", [])
+        research_gaps = analysis.get("research_gaps", [])
         
-        # Create a comprehensive prompt for the language model
-        paper_titles = [p.get("title", "") for p in papers[:5] if p.get("title")]
-        paper_titles_text = "\n".join([f"- {title}" for title in paper_titles])
+        # Format reference information
+        references = []
+        for i, paper in enumerate(papers[:10]):  # Limit to 10 references
+            authors = paper.get("authors", [])
+            author_text = ", ".join(authors[:3])
+            if len(authors) > 3:
+                author_text += " et al."
+                
+            year = paper.get("year", "")
+            title = paper.get("title", "")
+            journal = paper.get("journal", "Unknown Journal")
+            
+            # Format in academic citation style
+            ref = f"{author_text} ({year}). {title}. *{journal}*."
+            references.append(f"[{i+1}] {ref}")
         
+        references_text = "\n\n".join(references)
+        
+        # Format key findings, methodologies and research gaps
+        key_findings_text = "\n".join([f"- {finding}" for finding in key_findings])
+        methodologies_text = "\n".join([f"- {method}" for method in methodologies])
+        research_gaps_text = "\n".join([f"- {gap}" for gap in research_gaps])
+        
+        # Create a comprehensive prompt for the language model with improved paper structure
         prompt = [
-            {"role": "system", "content": f"你是一位专业的学术论文写作专家，擅长以清晰、专业的学术风格撰写综述类论文。请基于提供的研究资料，为主题「{topic}」撰写一篇完整的学术论文。论文应包含标题、摘要、引言、方法与材料、研究结果、讨论、结论和参考文献等章节。论文应具有专业的学术风格，逻辑清晰，论证严谨。"},
-            {"role": "user", "content": f"""请为主题「{topic}」撰写一篇完整的学术论文。以下是相关研究资料：
+            {"role": "system", "content": f"""You are an expert academic writer specializing in creating professionally formatted research papers. 
+            Create a complete academic paper on the topic '{topic}' using the provided research materials.
+            
+            Format the paper using proper academic structure with these sections:
+            1. Title: Should be centered, bold, and descriptive
+            2. Abstract: A concise summary of the paper (150-250 words)
+            3. Introduction: Background, significance, research questions
+            4. Literature Review: Analysis of existing research
+            5. Methodology: Approaches used in the field
+            6. Results and Discussion: Key findings and their implications
+            7. Future Research Directions: Gaps and opportunities
+            8. Conclusion: Summary of contributions
+            9. References: Properly formatted citations
+            
+            Use academic language, maintain logical flow between sections, and ensure proper citation of sources."""},
+            
+            {"role": "user", "content": f"""Please write a comprehensive academic paper on the topic "{topic}" following proper academic formatting and structure.
 
-# 研究摘要
+Here is the research material to incorporate:
+
+SUMMARY OF RESEARCH:
 {summary}
 
-# 相关论文
-{paper_titles_text}
+KEY FINDINGS FROM LITERATURE:
+{key_findings_text}
 
-# 研究内容
-{content}
+METHODOLOGIES IDENTIFIED:
+{methodologies_text}
 
-请撰写一篇包含以下结构的完整学术论文：
-1. 标题（应与主题「{topic}」相关）
-2. 摘要
-3. 引言（介绍研究背景、意义和目的）
-4. 方法与材料（描述研究方法和数据来源）
-5. 研究结果（详细展示研究发现）
-6. 讨论（分析研究结果的意义、局限性及未来研究方向）
-7. 结论（总结研究发现和贡献）
-8. 参考文献（基于提供的相关论文）
+RESEARCH GAPS:
+{research_gaps_text}
 
-请确保论文的标题为"# {topic}：研究现状与发展趋势"，并使用Markdown格式排版。
+REFERENCES TO CITE:
+{references_text}
+
+Please format the paper with clear section headers (# for main headers, ## for subheaders) and include:
+1. A descriptive title
+2. An informative abstract
+3. A comprehensive introduction setting the context
+4. A thorough literature review section analyzing existing research
+5. A methodology section describing research approaches
+6. Results and discussion of key findings
+7. Future research directions based on identified gaps
+8. A conclusion summarizing the paper's contributions
+9. Properly formatted references section
+
+The paper should be scholarly in tone, use appropriate academic terminology, and maintain logical flow between sections.
 """}
         ]
         
@@ -97,6 +144,10 @@ class WritingAgent(BaseAgent):
         if not paper_content or paper_content.startswith("API"):
             logger.error(f"API call failed: {paper_content}")
             raise Exception(f"Language model API call failed: {paper_content}")
+        
+        # Add formatting improvements if needed
+        if not paper_content.startswith('# '):
+            paper_content = f"# {topic}: A Comprehensive Review\n\n{paper_content}"
         
         self.progress = 100
         return paper_content

@@ -36,6 +36,24 @@
             box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
         }
         
+        /* Workflow arrow styles */
+        .workflow-arrow {
+            display: inline-flex;
+            align-items: center;
+        }
+        
+        /* Responsive styles for workflow */
+        @media (max-width: 768px) {
+            .workflow-container {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .workflow-arrow {
+                transform: rotate(90deg);
+                margin: 0.5rem 0;
+            }
+        }
+        
         /* Added styles for logs display */
         .log-container {
             max-height: 300px;
@@ -134,27 +152,57 @@
             <!-- Action Buttons -->
             <div class="card p-6 mb-6">
                 <h3 class="text-lg font-semibold mb-4">Actions</h3>
-                <div class="flex flex-wrap gap-4">
-                    <button id="researchBtn" class="btn-primary text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if research %}opacity-50{% endif %}">
-                        <span class="inline-block">📊</span> Research
-                    </button>
-                    <button id="writeBtn" class="btn-primary text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if not research or draft %}opacity-50{% endif %}">
-                        <span class="inline-block">📝</span> Write Paper
-                    </button>
-                    <button id="reviewBtn" class="btn-primary text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if not draft or review %}opacity-50{% endif %}">
-                        <span class="inline-block">🔍</span> Review Paper
-                    </button>
-                    <button id="multiAgentBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if final %}opacity-50{% endif %}">
-                        <span class="inline-block">🤖</span> Generate with Multi-Agent
-                    </button>
-                    <button id="interactiveMultiAgentBtn" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if final %}opacity-50{% endif %}">
-                        <span class="inline-block">🧠</span> Interactive Multi-Agent
-                    </button>
-                    {% if draft %}
-                    <button id="downloadBtn" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg flex items-center gap-2">
-                        <span class="inline-block">📥</span> Download Paper
-                    </button>
-                    {% endif %}
+                <div class="flex flex-wrap justify-between">
+                    <div class="flex flex-wrap items-center workflow-container md:flex-row">
+                        <button id="researchBtn" class="btn-primary text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if research %}opacity-50{% endif %}">
+                            <span class="inline-block">📊</span> Research
+                        </button>
+                        
+                        <!-- Arrow between Research and Write -->
+                        <div class="workflow-arrow mx-2 text-gray-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                        </div>
+                        
+                        <button id="writeBtn" class="btn-primary text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if not research or draft %}opacity-50{% endif %}">
+                            <span class="inline-block">📝</span> Write Paper
+                        </button>
+                        
+                        <!-- Arrow between Write and Review -->
+                        <div class="workflow-arrow mx-2 text-gray-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                        </div>
+                        
+                        <button id="reviewBtn" class="btn-primary text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if not draft or review %}opacity-50{% endif %}">
+                            <span class="inline-block">🔍</span> Review Paper
+                        </button>
+                        
+                        {% if draft %}
+                        <!-- Arrow between Review and Download -->
+                        <div class="workflow-arrow mx-2 text-gray-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                        </div>
+                        
+                        <button id="downloadBtn" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg flex items-center gap-2">
+                            <span class="inline-block">📥</span> Download Paper
+                        </button>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mt-4 sm:mt-0">
+                        <button id="multiAgentBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if final %}opacity-50{% endif %}" style="display: none;">
+                            <span class="inline-block">🤖</span> Generate with Multi-Agent
+                        </button>
+                        
+                        <button id="interactiveMultiAgentBtn" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg flex items-center gap-2 {% if final %}opacity-50{% endif %}">
+                            <span class="inline-block">🧠</span> Interactive Multi-Agent
+                        </button>
+                    </div>
                 </div>
             </div>
             
@@ -162,9 +210,12 @@
             <div class="card p-6 mb-6">
                 <div class="border-b border-gray-200 mb-6">
                     <nav class="-mb-px flex">
-                        <button class="tab-btn mr-8 py-4 text-indigo-500 border-b-2 border-indigo-500 font-medium" data-tab="research">Research</button>
-                        <button class="tab-btn mr-8 py-4 text-gray-500 font-medium" data-tab="paper">Paper</button>
-                        <button class="tab-btn py-4 text-gray-500 font-medium" data-tab="review">Review</button>
+                        <button class="tab-btn mr-6 py-4 text-indigo-500 border-b-2 border-indigo-500 font-medium" data-tab="research">Research</button>
+                        <button class="tab-btn mr-6 py-4 text-gray-500 font-medium" data-tab="paper">Paper</button>
+                        <button class="tab-btn mr-6 py-4 text-gray-500 font-medium" data-tab="review">Review</button>
+                        {% if app_config.ENABLE_MULTI_AGENT %}
+                            <button class="tab-btn py-4 text-gray-500 font-medium" data-tab="agents">Multi-Agent</button>
+                        {% endif %}
                     </nav>
                 </div>
                 
@@ -173,8 +224,128 @@
                     {% if research %}
                         <div class="mb-4">
                             <h3 class="text-lg font-medium text-gray-900 mb-2">Research Results</h3>
-                            <div class="prose prose-indigo max-w-none">
-                                <pre id="research-content" class="bg-gray-50 p-4 rounded overflow-auto max-h-96">{{ research.content }}</pre>
+                            <div id="research-content" class="bg-gray-50 p-4 rounded overflow-auto">
+                                {% set research_data = research.content|fromjson %}
+                                
+                                <!-- Sources Summary -->
+                                <div class="mb-4">
+                                    <p class="font-medium text-gray-700">Sources: 
+                                        {% if research_data.successful_sources %}
+                                            <span class="text-green-600">{{ research_data.successful_sources|join(', ') }}</span>
+                                        {% else %}
+                                            <span class="text-gray-500">None</span>
+                                        {% endif %}
+                                    </p>
+                                    
+                                    {% if research_data.failed_sources %}
+                                        <p class="text-sm text-red-600 mt-1">Failed sources: 
+                                            {% for source, error in research_data.failed_sources.items() %}
+                                                {{ source }} ({{ error }}){% if not loop.last %}, {% endif %}
+                                            {% endfor %}
+                                        </p>
+                                    {% endif %}
+                                </div>
+                                
+                                <!-- Papers List -->
+                                <h4 class="text-md font-medium text-gray-900 mb-2">Found Papers ({{ research_data.papers|length }})</h4>
+                                <div class="space-y-4">
+                                    {% for paper in research_data.papers %}
+                                        <div class="paper-card border border-gray-200 rounded-lg p-4 bg-white hover:shadow-md transition">
+                                            <h5 class="text-lg font-medium text-indigo-700">
+                                                {% if paper.url %}
+                                                    <a href="{{ paper.url }}" target="_blank" class="hover:underline">
+                                                        {{ paper.title }}
+                                                        <svg class="inline-block w-4 h-4 ml-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                        </svg>
+                                                    </a>
+                                                {% else %}
+                                                    {{ paper.title }}
+                                                {% endif %}
+                                            </h5>
+                                            
+                                            <div class="mt-2 text-sm text-gray-700">
+                                                <!-- Authors -->
+                                                <p class="font-medium">
+                                                    {% if paper.authors %}
+                                                        {{ paper.authors|join(', ') }}
+                                                    {% else %}
+                                                        Unknown Authors
+                                                    {% endif %}
+                                                </p>
+                                                
+                                                <!-- Publication Info -->
+                                                <p class="mt-1">
+                                                    {% if paper.journal %}
+                                                        <span class="font-medium">{{ paper.journal }}</span> • 
+                                                    {% endif %}
+                                                    {% if paper.year %}
+                                                        <span>{{ paper.year }}</span>
+                                                    {% endif %}
+                                                    {% if paper.citations %}
+                                                        • <span>Cited by: {{ paper.citations }}</span>
+                                                    {% endif %}
+                                                    {% if paper.source %}
+                                                        • <span class="text-indigo-600">{{ paper.source }}</span>
+                                                    {% endif %}
+                                                </p>
+                                                
+                                                <!-- Abstract -->
+                                                <div class="mt-2">
+                                                    <p class="font-medium">Abstract:</p>
+                                                    <p class="text-gray-600">{{ paper.abstract }}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                                
+                                <!-- Summary -->
+                                <div class="mt-6">
+                                    <h4 class="text-md font-medium text-gray-900 mb-2">Summary</h4>
+                                    <div class="bg-white border border-gray-200 rounded-lg p-4">
+                                        {{ research_data.summary|safe }}
+                                    </div>
+                                </div>
+                                
+                                <!-- Analysis -->
+                                <div class="mt-6">
+                                    <h4 class="text-md font-medium text-gray-900 mb-2">Analysis</h4>
+                                    <div class="bg-white border border-gray-200 rounded-lg p-4">
+                                        {% if research_data.analysis.key_findings %}
+                                            <div class="mb-4">
+                                                <h5 class="font-medium text-gray-800">Key Findings</h5>
+                                                <ul class="list-disc pl-5 mt-2 text-gray-600">
+                                                    {% for finding in research_data.analysis.key_findings %}
+                                                        <li>{{ finding }}</li>
+                                                    {% endfor %}
+                                                </ul>
+                                            </div>
+                                        {% endif %}
+                                        
+                                        {% if research_data.analysis.methodologies %}
+                                            <div class="mb-4">
+                                                <h5 class="font-medium text-gray-800">Methodologies</h5>
+                                                <ul class="list-disc pl-5 mt-2 text-gray-600">
+                                                    {% for method in research_data.analysis.methodologies %}
+                                                        <li>{{ method }}</li>
+                                                    {% endfor %}
+                                                </ul>
+                                            </div>
+                                        {% endif %}
+                                        
+                                        {% if research_data.analysis.research_gaps %}
+                                            <div>
+                                                <h5 class="font-medium text-gray-800">Research Gaps</h5>
+                                                <ul class="list-disc pl-5 mt-2 text-gray-600">
+                                                    {% for gap in research_data.analysis.research_gaps %}
+                                                        <li>{{ gap }}</li>
+                                                    {% endfor %}
+                                                </ul>
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     {% else %}
@@ -187,11 +358,222 @@
                 <!-- Paper Tab Content -->
                 <div id="paper-tab" class="tab-content hidden">
                     {% if draft %}
-                        <div class="mb-4">
-                            <h3 class="text-lg font-medium text-gray-900 mb-2">Paper Draft</h3>
-                            <div class="prose prose-indigo max-w-none">
-                                <div id="paper-content" class="bg-white p-4 rounded border border-gray-200">
-                                    {{ draft.content|safe }}
+                        <div class="mb-4 border-b pb-4 flex justify-between items-center">
+                            <h3 class="text-lg font-medium text-gray-900">Paper Draft</h3>
+                            <div class="space-x-2">
+                                <button id="toggleLayoutBtn" class="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">
+                                    <span id="layoutIcon">⊞</span> Toggle Layout
+                                </button>
+                                <button id="increaseFontBtn" class="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">A+</button>
+                                <button id="decreaseFontBtn" class="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded">A-</button>
+                                <button id="printPaperBtn" class="px-3 py-1 text-sm bg-blue-100 hover:bg-blue-200 rounded text-blue-800">
+                                    <span>🖨️</span> Print
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="paper-wrapper">
+                            <div id="paper-container" class="paper-container prose prose-indigo max-w-none single-column">
+                                <div id="paper-content" class="bg-white p-6 rounded border border-gray-200 shadow-sm">
+                                    <style>
+                                        /* Paper container base styles */
+                                        .paper-container {
+                                            font-family: "Times New Roman", Times, serif;
+                                            line-height: 1.6;
+                                            transition: all 0.3s ease;
+                                        }
+                                        
+                                        /* Layout options */
+                                        .single-column {
+                                            width: 100%;
+                                            max-width: 800px;
+                                            margin: 0 auto;
+                                        }
+                                        
+                                        .two-column {
+                                            column-count: 2;
+                                            column-gap: 2rem;
+                                            width: 100%;
+                                        }
+                                        
+                                        /* Header styles */
+                                        .paper-container h1 {
+                                            font-size: 1.8rem;
+                                            text-align: center;
+                                            margin-bottom: 1.5rem;
+                                            color: #1a202c;
+                                            font-weight: bold;
+                                            line-height: 1.3;
+                                            column-span: all;
+                                        }
+                                        
+                                        .paper-container h2 {
+                                            font-size: 1.5rem;
+                                            margin-top: 2rem;
+                                            margin-bottom: 1rem;
+                                            color: #2d3748;
+                                            border-bottom: 1px solid #e2e8f0;
+                                            padding-bottom: 0.5rem;
+                                            font-weight: bold;
+                                            break-after: avoid;
+                                            column-span: all;
+                                        }
+                                        
+                                        .paper-container h3 {
+                                            font-size: 1.25rem;
+                                            margin-top: 1.5rem;
+                                            margin-bottom: 0.75rem;
+                                            color: #4a5568;
+                                            font-weight: bold;
+                                            break-after: avoid;
+                                        }
+                                        
+                                        /* Text content */
+                                        .paper-container p {
+                                            text-align: justify;
+                                            margin-bottom: 1rem;
+                                            font-size: 1.05rem;
+                                            hyphens: auto;
+                                        }
+                                        
+                                        .paper-container blockquote {
+                                            border-left: 4px solid #e2e8f0;
+                                            padding-left: 1rem;
+                                            font-style: italic;
+                                            color: #4a5568;
+                                            break-inside: avoid;
+                                        }
+                                        
+                                        .paper-container ul, .paper-container ol {
+                                            margin-bottom: 1rem;
+                                            padding-left: 2rem;
+                                        }
+                                        
+                                        .paper-container li {
+                                            margin-bottom: 0.5rem;
+                                        }
+                                        
+                                        /* Tables */
+                                        .paper-container table {
+                                            width: 100%;
+                                            border-collapse: collapse;
+                                            margin-bottom: 1rem;
+                                            break-inside: avoid;
+                                        }
+                                        
+                                        .paper-container th, .paper-container td {
+                                            border: 1px solid #e2e8f0;
+                                            padding: 0.5rem;
+                                            text-align: left;
+                                        }
+                                        
+                                        .paper-container th {
+                                            background-color: #f7fafc;
+                                        }
+                                        
+                                        /* Special sections */
+                                        .paper-container .abstract {
+                                            font-style: italic;
+                                            margin: 1rem 0 2rem 0;
+                                            padding: 1rem;
+                                            background-color: #f8f9fa;
+                                            border-left: 4px solid #4a5568;
+                                            break-inside: avoid;
+                                        }
+                                        
+                                        .paper-container .references {
+                                            margin-top: 2rem;
+                                            padding-top: 1rem;
+                                            border-top: 2px solid #e2e8f0;
+                                        }
+                                        
+                                        /* LaTeX equation styling */
+                                        .paper-container .math {
+                                            overflow-x: auto;
+                                            padding: 0.5rem 0;
+                                        }
+                                        
+                                        .paper-container .math.display {
+                                            margin: 1rem 0;
+                                            text-align: center;
+                                        }
+                                        
+                                        /* Code blocks */
+                                        .paper-container pre {
+                                            background-color: #f7fafc;
+                                            padding: 1rem;
+                                            border-radius: 0.25rem;
+                                            overflow-x: auto;
+                                            margin-bottom: 1rem;
+                                        }
+                                        
+                                        .paper-container code {
+                                            font-family: monospace;
+                                            font-size: 0.9rem;
+                                            background-color: #f7fafc;
+                                            padding: 0.1rem 0.25rem;
+                                            border-radius: 0.25rem;
+                                        }
+                                        
+                                        /* Citation styling */
+                                        .paper-container .citation {
+                                            color: #4a5568;
+                                            font-size: 0.9rem;
+                                        }
+                                        
+                                        /* Print styles */
+                                        @media print {
+                                            body * {
+                                                visibility: hidden;
+                                            }
+                                            
+                                            #paper-content, #paper-content * {
+                                                visibility: visible;
+                                            }
+                                            
+                                            #paper-content {
+                                                position: absolute;
+                                                left: 0;
+                                                top: 0;
+                                                width: 100%;
+                                                height: 100%;
+                                                padding: 25mm;
+                                                margin: 0;
+                                                background: white;
+                                                box-shadow: none;
+                                                border: none;
+                                            }
+                                            
+                                            .paper-container {
+                                                font-size: 12pt;
+                                                column-count: 1 !important;
+                                            }
+                                            
+                                            .paper-container h1 {
+                                                font-size: 16pt;
+                                            }
+                                            
+                                            .paper-container h2 {
+                                                font-size: 14pt;
+                                                page-break-after: avoid;
+                                            }
+                                            
+                                            .paper-container h3 {
+                                                font-size: 12pt;
+                                                page-break-after: avoid;
+                                            }
+                                            
+                                            .paper-container p, .paper-container li {
+                                                orphans: 3;
+                                                widows: 3;
+                                            }
+                                            
+                                            .paper-container table, .paper-container figure {
+                                                page-break-inside: avoid;
+                                            }
+                                        }
+                                    </style>
+                                    {{ draft.content|process_academic_content|safe }}
                                 </div>
                             </div>
                         </div>
@@ -208,8 +590,18 @@
                         <div class="mb-4">
                             <h3 class="text-lg font-medium text-gray-900 mb-2">Review Feedback</h3>
                             <div class="prose prose-indigo max-w-none">
-                                <div id="review-content" class="bg-gray-50 p-4 rounded">
-                                    {{ review.content|safe }}
+                                <div id="review-content" class="bg-gray-50 p-4 rounded markdown-content">
+                                    {% if '\n' in review.content %}
+                                        {% for line in review.content.split('\n') %}
+                                            {% if line.strip() %}
+                                                <p>{{ line|safe }}</p>
+                                            {% else %}
+                                                <br>
+                                            {% endif %}
+                                        {% endfor %}
+                                    {% else %}
+                                        {{ review.content|process_academic_content|safe }}
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
@@ -218,6 +610,76 @@
                             <p>No review has been conducted yet. Complete the writing phase first, then click "Review Paper".</p>
                         </div>
                     {% endif %}
+                </div>
+
+                <!-- Multi-Agent Visualization Tab -->
+                <div id="agents-tab" class="tab-content hidden">
+                    <div class="flex justify-end mb-4">
+                        <button id="startMultiAgentBtn" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Start Interactive Multi-Agent</button>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                        <!-- Agent Cards -->
+                        <div id="agent-mcp" class="border rounded-lg p-4 bg-gray-50">
+                            <div class="flex items-center justify-between mb-2">
+                                <h3 class="text-lg font-semibold text-gray-800">Master Control Program</h3>
+                                <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">Coordinator</span>
+                            </div>
+                            <div class="agent-status mb-2">Status: <span class="agent-status-value">Idle</span></div>
+                            <div class="agent-task-container h-32 overflow-y-auto bg-white p-2 rounded border">
+                                <div class="agent-current-task text-sm">Waiting to start...</div>
+                            </div>
+                        </div>
+                        
+                        <div id="agent-research" class="border rounded-lg p-4 bg-gray-50">
+                            <div class="flex items-center justify-between mb-2">
+                                <h3 class="text-lg font-semibold text-gray-800">Research Agent</h3>
+                                <span class="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">Knowledge Gatherer</span>
+                            </div>
+                            <div class="agent-status mb-2">Status: <span class="agent-status-value">Idle</span></div>
+                            <div class="agent-task-container h-32 overflow-y-auto bg-white p-2 rounded border">
+                                <div class="agent-current-task text-sm">Waiting to start...</div>
+                            </div>
+                        </div>
+                        
+                        <div id="agent-writing" class="border rounded-lg p-4 bg-gray-50">
+                            <div class="flex items-center justify-between mb-2">
+                                <h3 class="text-lg font-semibold text-gray-800">Writing Agent</h3>
+                                <span class="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs">Content Creator</span>
+                            </div>
+                            <div class="agent-status mb-2">Status: <span class="agent-status-value">Idle</span></div>
+                            <div class="agent-task-container h-32 overflow-y-auto bg-white p-2 rounded border">
+                                <div class="agent-current-task text-sm">Waiting to start...</div>
+                            </div>
+                        </div>
+                        
+                        <div id="agent-review" class="border rounded-lg p-4 bg-gray-50">
+                            <div class="flex items-center justify-between mb-2">
+                                <h3 class="text-lg font-semibold text-gray-800">Review Agent</h3>
+                                <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs">Quality Control</span>
+                            </div>
+                            <div class="agent-status mb-2">Status: <span class="agent-status-value">Idle</span></div>
+                            <div class="agent-task-container h-32 overflow-y-auto bg-white p-2 rounded border">
+                                <div class="agent-current-task text-sm">Waiting to start...</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Agent Interaction Flow -->
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold mb-3">Agent Interaction Flow</h3>
+                        <div id="agent-interaction-flow" class="border rounded-lg p-4 bg-white h-60 overflow-y-auto">
+                            <div class="text-sm text-gray-600">The interaction between agents will be displayed here once started...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Detailed Logs -->
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3">Detailed Process Logs</h3>
+                        <div id="multiAgentLogs" class="border rounded-lg p-4 bg-gray-50 h-96 overflow-y-auto font-mono text-sm">
+                            <p>Detailed logs will appear here after starting the process...</p>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -231,181 +693,290 @@
         </main>
     </div>
 
+    <!-- Scripts for rendering math and markdown -->
+    <script type="text/javascript">
+    // Configure MathJax before loading
+    window.MathJax = {
+        tex2jax: {
+            inlineMath: [['$', '$'], ['\\(', '\\)']],
+            displayMath: [['$$', '$$'], ['\\[', '\\]']],
+            processEscapes: true
+        },
+        CommonHTML: { linebreaks: { automatic: true } },
+        "HTML-CSS": { linebreaks: { automatic: true } },
+        SVG: { linebreaks: { automatic: true } }
+    };
+    </script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+
     <script>
-        // Variables
+    document.addEventListener('DOMContentLoaded', function() {
+        // Paper formatting controls
         const projectId = {{ project.id }};
-        let latestLogTimestamp = '';
+        let pollInterval;
+        const toggleLayoutBtn = document.getElementById('toggleLayoutBtn');
+        const increaseFontBtn = document.getElementById('increaseFontBtn');
+        const decreaseFontBtn = document.getElementById('decreaseFontBtn');
+        const printPaperBtn = document.getElementById('printPaperBtn');
+        const paperContainer = document.getElementById('paper-container');
+        const layoutIcon = document.getElementById('layoutIcon');
         
-        // Tab Switcher
+        // Base font size (rem)
+        let currentFontSize = 1.05;
+
+        // Switch tabs
         document.querySelectorAll('.tab-btn').forEach(button => {
-            button.addEventListener('click', () => {
-                // Hide all tab contents
-                document.querySelectorAll('.tab-content').forEach(tab => {
-                    tab.classList.add('hidden');
+            button.addEventListener('click', function() {
+                // Deactivate all buttons and hide contents
+                document.querySelectorAll('.tab-btn').forEach(btn => {
+                    btn.classList.remove('text-indigo-500', 'border-b-2', 'border-indigo-500');
+                    btn.classList.add('text-gray-500');
                 });
                 
-                // Remove active class from all tabs
-                document.querySelectorAll('.tab-btn').forEach(tab => {
-                    tab.classList.remove('text-indigo-500', 'border-b-2', 'border-indigo-500');
-                    tab.classList.add('text-gray-500');
-                });
+                // Activate clicked button
+                this.classList.remove('text-gray-500');
+                this.classList.add('text-indigo-500', 'border-b-2', 'border-indigo-500');
                 
-                // Show the selected tab content
-                const tabName = button.getAttribute('data-tab');
+                // Show content
+                const tabName = this.getAttribute('data-tab');
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.add('hidden');
+                });
                 document.getElementById(`${tabName}-tab`).classList.remove('hidden');
                 
-                // Add active class to the selected tab
-                button.classList.remove('text-gray-500');
-                button.classList.add('text-indigo-500', 'border-b-2', 'border-indigo-500');
+                // Try to typeset MathJax when switching to tabs with math content
+                if (tabName === 'paper' || tabName === 'review') {
+                    setTimeout(function() {
+                        if (typeof window.MathJax !== 'undefined' && window.MathJax.Hub) {
+                            window.MathJax.Hub.Queue(["Typeset", window.MathJax.Hub]);
+                        }
+                    }, 100);
+                }
             });
         });
         
-        // Action Buttons
-        document.getElementById('researchBtn').addEventListener('click', () => startPhase('research'));
-        document.getElementById('writeBtn').addEventListener('click', () => startPhase('writing'));
-        document.getElementById('reviewBtn').addEventListener('click', () => startPhase('review'));
-        document.getElementById('multiAgentBtn').addEventListener('click', () => startPhase('multi-agent'));
-        document.getElementById('interactiveMultiAgentBtn').addEventListener('click', () => startPhase('interactive-multi-agent'));
-        
-        {% if draft %}
-        document.getElementById('downloadBtn').addEventListener('click', () => {
-            // Create a Blob with the paper content
-            const paperContent = document.getElementById('paper-content').innerText;
-            const blob = new Blob([paperContent], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            
-            // Create a link element to download the file
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = '{{ project.topic }}.md';
-            document.body.appendChild(a);
-            a.click();
-            
-            // Clean up
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        });
-        {% endif %}
-        
-        // Start a project phase (research, writing, or review)
-        function startPhase(phase) {
-            // Fix button ID mismatches by converting hyphens in phase name to camelCase for button IDs
-            let buttonId = phase;
-            
-            // Handle special cases for multi-agent button IDs
-            if (phase === 'multi-agent') {
-                buttonId = 'multiAgent';
-            } else if (phase === 'interactive-multi-agent') {
-                buttonId = 'interactiveMultiAgent';
-            }
-            
-            const button = document.getElementById(`${buttonId}Btn`);
-            if (!button) {
-                console.error(`Button with ID ${buttonId}Btn not found`);
-                return;
-            }
-            
-            if (button.classList.contains('opacity-50')) {
-                return; // Button is disabled
-            }
-            
-            // Disable the button
-            button.classList.add('opacity-50');
-            button.disabled = true;
-            
-            // Show loading indication
-            const originalText = button.innerHTML;
-            button.innerHTML = `<span class="inline-block animate-spin">⏳</span> Processing...`;
-            
-            // Make API call
-            fetch(`/api/projects/${projectId}/start-${phase}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    alert(`Error: ${data.error}`);
+        // Toggle between one and two column layout
+        if (toggleLayoutBtn) {
+            toggleLayoutBtn.addEventListener('click', function() {
+                paperContainer.classList.toggle('single-column');
+                paperContainer.classList.toggle('two-column');
+                
+                // Update the icon to show current state
+                if (paperContainer.classList.contains('two-column')) {
+                    layoutIcon.textContent = '⊟'; // Icon for single column 
                 } else {
-                    // Start polling for logs
-                    setInterval(() => {
-                        fetchLogs();
-                    }, 2000);
+                    layoutIcon.textContent = '⊞'; // Icon for two columns
                 }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert(`An error occurred: ${error.message}`);
-                
-                // Restore button
-                button.innerHTML = originalText;
-                button.classList.remove('opacity-50');
-                button.disabled = false;
             });
         }
         
-        // Update logs function (for better readability)
-        function updateLogs(forceRefresh = false) {
-            if (forceRefresh) {
-                latestLogTimestamp = null;
-            }
-            fetchLogs();
+        // Increase font size
+        if (increaseFontBtn) {
+            increaseFontBtn.addEventListener('click', function() {
+                if (currentFontSize < 1.4) {
+                    currentFontSize += 0.05;
+                    updateFontSize();
+                }
+            });
         }
         
-        // Fetch and display logs
-        async function fetchLogs() {
-            try {
-                const url = latestLogTimestamp 
-                    ? `/api/projects/${projectId}/logs?since=${encodeURIComponent(latestLogTimestamp)}`
-                    : `/api/projects/${projectId}/logs`;
-                    
-                const response = await fetch(url);
-                const logs = await response.json();
-                
-                const logsContainer = document.getElementById('logs-container');
-                
-                // Clear the loading message on first load
-                if (!latestLogTimestamp && logs.length === 0) {
-                    logsContainer.innerHTML = '<div class="text-center text-gray-400 py-4">No activity logs yet.</div>';
-                } else if (!latestLogTimestamp) {
-                    logsContainer.innerHTML = '';
+        // Decrease font size
+        if (decreaseFontBtn) {
+            decreaseFontBtn.addEventListener('click', function() {
+                if (currentFontSize > 0.8) {
+                    currentFontSize -= 0.05;
+                    updateFontSize();
                 }
-                
-                if (logs.length > 0) {
-                    // Update the latest timestamp
-                    latestLogTimestamp = logs[logs.length - 1].timestamp;
-                    
-                    // Add new logs to the container
-                    logs.forEach(log => {
-                        const logEntry = document.createElement('div');
-                        logEntry.className = `log-entry ${log.message_type || ''}`;
-                        
-                        logEntry.innerHTML = `
-                            <span class="log-timestamp">[${log.timestamp}]</span>
-                            <span class="log-agent">[${log.agent_type}]</span>
-                            <span class="log-message">${log.activity}</span>
-                        `;
-                        
-                        logsContainer.appendChild(logEntry);
-                    });
-                    
-                    // Scroll to the bottom of the logs container
-                    logsContainer.scrollTop = logsContainer.scrollHeight;
-                }
-            } catch (error) {
-                console.error('Error fetching logs:', error);
-            }
-            
-            // Schedule the next logs fetch
-            setTimeout(fetchLogs, 5000);
+            });
         }
         
-        // Start fetching logs when the page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            fetchLogs();
+        // Update font size in the paper content
+        function updateFontSize() {
+            const paperContent = document.getElementById('paper-content');
+            if (paperContent) {
+                const paragraphs = paperContent.querySelectorAll('p');
+                paragraphs.forEach(p => {
+                    p.style.fontSize = `${currentFontSize}rem`;
+                });
+            }
+        }
+        
+        // Print paper
+        if (printPaperBtn) {
+            printPaperBtn.addEventListener('click', function() {
+                window.print();
+            });
+        }
+        
+        // Process any markdown content
+        // Using a simple approach instead of marked.js to avoid additional dependencies
+        const markdownElements = document.querySelectorAll('.markdown-content');
+        markdownElements.forEach(element => {
+            if (!element.getAttribute('data-processed')) {
+                element.setAttribute('data-processed', 'true');
+                // The content is already processed by the server-side filter
+            }
         });
+        
+        // Research Button
+        const researchBtn = document.getElementById('researchBtn');
+        if (researchBtn) {
+            researchBtn.addEventListener('click', function() {
+                if (researchBtn.classList.contains('opacity-50')) {
+                    // Button is disabled - research already done
+                    return;
+                }
+                
+                if (confirm('Start the research process? This may take some time.')) {
+                    // Show loading state
+                    researchBtn.disabled = true;
+                    researchBtn.innerHTML = '<span class="inline-block animate-spin mr-2">⟳</span> Researching...';
+                    
+                    // Call the API to start research
+                    fetch(`/api/projects/${projectId}/start-research`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Research started:', data);
+                        // Reload the page to see updated content
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 2000);
+                    })
+                    .catch(error => {
+                        console.error('Error starting research:', error);
+                        alert('Error starting research. Please check the console for details.');
+                        researchBtn.disabled = false;
+                        researchBtn.innerHTML = '<span class="inline-block">📊</span> Research';
+                    });
+                }
+            });
+        }
+
+        // Write Button
+        const writeBtn = document.getElementById('writeBtn');
+        if (writeBtn) {
+            writeBtn.addEventListener('click', function() {
+                if (writeBtn.classList.contains('opacity-50')) {
+                    // Button is disabled - either no research or draft already exists
+                    return;
+                }
+                
+                if (confirm('Start the writing process? This may take some time.')) {
+                    // Show loading state
+                    writeBtn.disabled = true;
+                    writeBtn.innerHTML = '<span class="inline-block animate-spin mr-2">⟳</span> Writing...';
+                    
+                    // Call the API to start writing
+                    fetch(`/api/projects/${projectId}/start-writing`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Writing started:', data);
+                        // Reload the page to see updated content
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 2000);
+                    })
+                    .catch(error => {
+                        console.error('Error starting writing:', error);
+                        alert('Error starting writing. Please check the console for details.');
+                        writeBtn.disabled = false;
+                        writeBtn.innerHTML = '<span class="inline-block">📝</span> Write Paper';
+                    });
+                }
+            });
+        }
+
+        // Review Button
+        const reviewBtn = document.getElementById('reviewBtn');
+        if (reviewBtn) {
+            reviewBtn.addEventListener('click', function() {
+                if (reviewBtn.classList.contains('opacity-50')) {
+                    // Button is disabled - either no draft or review already exists
+                    return;
+                }
+                
+                if (confirm('Start the review process? This may take some time.')) {
+                    // Show loading state
+                    reviewBtn.disabled = true;
+                    reviewBtn.innerHTML = '<span class="inline-block animate-spin mr-2">⟳</span> Reviewing...';
+                    
+                    // Call the API to start review
+                    fetch(`/api/projects/${projectId}/start-review`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Review started:', data);
+                        // Reload the page to see updated content
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 2000);
+                    })
+                    .catch(error => {
+                        console.error('Error starting review:', error);
+                        alert('Error starting review. Please check the console for details.');
+                        reviewBtn.disabled = false;
+                        reviewBtn.innerHTML = '<span class="inline-block">🔍</span> Review Paper';
+                    });
+                }
+            });
+        }
+
+        // Interactive Multi-Agent Button
+        const interactiveMultiAgentBtn = document.getElementById('interactiveMultiAgentBtn');
+        if (interactiveMultiAgentBtn) {
+            interactiveMultiAgentBtn.addEventListener('click', function() {
+                // Switch to the agents tab
+                document.querySelector('[data-tab="agents"]').click();
+            });
+        }
+        
+        // Download Button
+        const downloadBtn = document.getElementById('downloadBtn');
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', function() {
+                // Format is HTML by default, can be changed to PDF if supported
+                const format = 'html';
+                // Create a download link
+                window.location.href = `/api/projects/${projectId}/export?format=${format}`;
+            });
+        }
+        
+        // When MathJax is fully loaded, typeset the document
+        setTimeout(function() {
+            if (typeof window.MathJax !== 'undefined' && window.MathJax.Hub) {
+                window.MathJax.Hub.Queue(["Typeset", window.MathJax.Hub]);
+            }
+        }, 500);
+    });
     </script>
 </body>
 </html>

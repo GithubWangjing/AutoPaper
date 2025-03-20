@@ -5,7 +5,8 @@ import requests
 import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from openai import OpenAI
-from openai import RateLimitError, APIError, APITimeoutError
+# Import the full openai module for error handling
+import openai
 import logging
 
 # 配置日志
@@ -137,7 +138,12 @@ class Arxiv:
         
         # If we got here, all attempts failed
         logger.error(f"All {self.max_retries} ArXiv API attempts failed")
-        raise APIError(f"ArXiv API failed after {self.max_retries} attempts")
+        # Use openai.APIError directly as a string error rather than trying to initialize it with proxies
+        return {
+            'papers': [],
+            'total_results': 0,
+            'error': f"ArXiv API failed after {self.max_retries} attempts"
+        }
                     
     def _parse_arxiv_response(self, content):
         """Parse the XML response from ArXiv."""
