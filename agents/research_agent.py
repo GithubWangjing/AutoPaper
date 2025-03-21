@@ -93,7 +93,7 @@ class ResearchAgent(BaseAgent):
                         # Try to get papers from arXiv with fewer retries
                         for attempt in range(self.max_retry_attempts):
                             try:
-                                search_results = self.arxiv_client.search(topic, max_results=8)  # Reduced from 10
+                                search_results = self.arxiv_client.search(topic, max_results=10)  # Reduced from 10
                                 arxiv_papers = search_results.get('papers', [])
                                 if arxiv_papers:
                                     logger.info(f"Successfully retrieved {len(arxiv_papers)} papers from arXiv")
@@ -115,7 +115,7 @@ class ResearchAgent(BaseAgent):
                         # Try to get papers from PubMed with fewer retries
                         for attempt in range(self.max_retry_attempts):
                             try:
-                                search_results = self.pubmed_client.search(topic, max_results=8)  # Reduced from 10
+                                search_results = self.pubmed_client.search(topic, max_results=10)  # Reduced from 10
                                 pubmed_papers = search_results.get('papers', [])
                                 if pubmed_papers:
                                     logger.info(f"Successfully retrieved {len(pubmed_papers)} papers from PubMed")

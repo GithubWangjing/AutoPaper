@@ -1,0 +1,72 @@
+<!-- Paper Type and Language Selection Options -->
+<div class="paper-options mt-4">
+    <h4>Paper Configuration</h4>
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="paper-type">Paper Type</label>
+                <select class="form-control" id="paper-type" name="paper_type">
+                    <option value="regular" selected>Regular Research Paper</option>
+                    <option value="review">Review Paper</option>
+                    <option value="survey">Survey Paper</option>
+                    <option value="letter">Letter</option>
+                    <option value="case_study">Case Study</option>
+                    <option value="technical_note">Technical Note</option>
+                    <option value="perspective">Perspective/Opinion Paper</option>
+                </select>
+                <small class="form-text text-muted">
+                    Select the type of academic paper you want to create.
+                </small>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="language">Language</label>
+                <select class="form-control" id="language" name="language">
+                    <option value="en" selected>English</option>
+                    <option value="en_us">English (US)</option>
+                    <option value="en_uk">English (UK)</option>
+                    <option value="zh">Chinese</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="es">Spanish</option>
+                    <option value="ja">Japanese</option>
+                </select>
+                <small class="form-text text-muted">
+                    Select the language for your paper.
+                </small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Paper Type Description -->
+    <div id="paper-type-description" class="alert alert-info mt-3">
+        <strong>Regular Research Paper:</strong> A full-length research paper presenting original research with comprehensive methods and results.
+    </div>
+</div>
+
+<!-- JavaScript to update the description when paper type changes -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const paperTypeSelect = document.getElementById('paper-type');
+    const descriptionDiv = document.getElementById('paper-type-description');
+    
+    // Paper type descriptions
+    const descriptions = {
+        'regular': '<strong>Regular Research Paper:</strong> A full-length research paper presenting original research with comprehensive methods and results.',
+        'review': '<strong>Review Paper:</strong> A comprehensive analysis and discussion of existing literature on a specific topic.',
+        'survey': '<strong>Survey Paper:</strong> A comprehensive overview of a research area with categorization and classification of existing work.',
+        'letter': '<strong>Letter:</strong> A short, focused paper reporting novel and significant findings that require rapid publication.',
+        'case_study': '<strong>Case Study:</strong> An in-depth analysis of a specific case, event, or implementation.',
+        'technical_note': '<strong>Technical Note:</strong> A brief paper describing novel techniques, methods, or tools.',
+        'perspective': '<strong>Perspective/Opinion Paper:</strong> A paper presenting the author\'s opinion or perspective on a specific topic.'
+    };
+    
+    // Update description when paper type changes
+    paperTypeSelect.addEventListener('change', function() {
+        const selectedType = paperTypeSelect.value;
+        descriptionDiv.innerHTML = descriptions[selectedType] || descriptions['regular'];
+    });
+});
+</script> 

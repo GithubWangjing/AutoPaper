@@ -15,6 +15,7 @@ from io import BytesIO
 import traceback
 import re
 import html
+import threading
 
 # Load environment variables
 load_dotenv()
@@ -50,6 +51,25 @@ def inject_app_config():
 # 配置数据库
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URI", 'sqlite:///instance/paper_projects.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Import and add figure generator functions to the template context
+try:
+    from utils.figure_generator import line_plot, bar_plot, scatter_plot, figure_to_base64
+    
+    @app.context_processor
+    def inject_figure_utils():
+        """Add figure generator functions to template context"""
+        return {
+            'line_plot': line_plot,
+            'bar_plot': bar_plot,
+            'scatter_plot': scatter_plot,
+            'figure_to_base64': figure_to_base64
+        }
+    logging.info("Figure generator functions added to template context")
+except ImportError:
+    logging.warning("Figure generator module not found, visualization functions will not be available")
+except Exception as e:
+    logging.error(f"Error setting up figure generator: {str(e)}")
 
 # Add custom Jinja2 filters
 @app.template_filter('fromjson')
@@ -210,6 +230,8 @@ class PaperProject(db.Model):
     status = db.Column(db.String(50), default="created")
     model_type = db.Column(db.String(50), default="siliconflow")
     research_source = db.Column(db.String(50), default="none")
+    paper_type = db.Column(db.String(50), default="regular")
+    language = db.Column(db.String(10), default="en")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -336,58 +358,65 @@ def index():
 
 @app.route('/api/projects', methods=['POST'])
 def create_project():
-    """Create a new paper project."""
-    try:
-        data = request.json
-        topic = data.get('title')
-        model_type = data.get('model_type', 'siliconflow')
+    """创建新项目"""
+    data = request.json
+    topic = data.get('topic', '')
+    model_type = data.get('model_type', 'siliconflow')
+    research_source = data.get('research_source', 'none')
+    paper_type = data.get('paper_type', 'regular')
+    language = data.get('language', 'en')
+    
+    # 验证自定义模型设置
+    custom_model_endpoint = None
+    custom_model_api_key = None
+    custom_model_name = None
+    custom_model_temperature = 0.7
+    custom_model_max_tokens = 2000
+    
+    if model_type == 'custom':
+        custom_model_endpoint = data.get('custom_model_endpoint', '')
+        custom_model_api_key = data.get('custom_model_api_key', '')
+        custom_model_name = data.get('custom_model_name', '')
+        custom_model_temperature = float(data.get('custom_model_temperature', 0.7))
+        custom_model_max_tokens = int(data.get('custom_model_max_tokens', 2000))
         
-        # Handle multiple research sources
-        research_sources = data.get('research_sources', [])
-        if not research_sources:
-            research_source = 'none'
-        else:
-            research_source = ','.join(research_sources)
-        
-        custom_model = data.get('custom_model', None)
-        
-        if not topic:
-            return jsonify({'error': 'Topic is required'}), 400
+        if not custom_model_endpoint or not custom_model_api_key:
+            return jsonify({'error': 'Custom model settings are incomplete'}), 400
 
-        with app.app_context():
-            # Create a new project
-            project = PaperProject(
-                topic=topic,
-                model_type=model_type,
-                research_source=research_source
-            )
-            
-            # 如果有自定义模型配置，保存到项目中
-            if custom_model and model_type == 'custom':
-                project.custom_model_endpoint = custom_model.get('endpoint')
-                project.custom_model_api_key = custom_model.get('api_key')
-                project.custom_model_name = custom_model.get('model_name')
-                project.custom_model_temperature = float(custom_model.get('temperature', 0.7))
-                project.custom_model_max_tokens = int(custom_model.get('max_tokens', 2000))
-            
-            db.session.add(project)
-            db.session.commit()
-            
-            project_id = project.id
-            
-            # 记录活动
-            log_agent_activity(project_id, 'system', f'Project created with topic: {topic}')
-            
-            # Redirect to project detail page
-            return jsonify({
-                'status': 'success',
-                'id': project_id,
-                'redirect_url': f'/projects/{project_id}'
-            })
-            
-    except Exception as e:
-        logger.error(f"Error creating project: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+    # 创建项目
+    project = PaperProject(
+        topic=topic, 
+        model_type=model_type,
+        research_source=research_source,
+        paper_type=paper_type, 
+        language=language,
+        custom_model_endpoint=custom_model_endpoint,
+        custom_model_api_key=custom_model_api_key,
+        custom_model_name=custom_model_name,
+        custom_model_temperature=custom_model_temperature,
+        custom_model_max_tokens=custom_model_max_tokens
+    )
+    
+    db.session.add(project)
+    db.session.commit()
+    
+    # 记录日志
+    log_agent_activity(project.id, "system", "project_created", 
+                      {"topic": topic, "model": model_type, 
+                       "research_source": research_source,
+                       "paper_type": paper_type,
+                       "language": language})
+    
+    return jsonify({
+        'id': project.id,
+        'topic': project.topic,
+        'status': project.status,
+        'model_type': project.model_type,
+        'research_source': project.research_source,
+        'paper_type': project.paper_type,
+        'language': project.language,
+        'created_at': project.created_at.isoformat()
+    })
 
 @app.route('/api/projects/<int:project_id>/logs', methods=['GET'])
 def get_project_logs(project_id):
@@ -469,32 +498,70 @@ def get_project_logs(project_id):
 
 @app.route('/projects/<int:project_id>', methods=['GET'])
 def project_detail(project_id):
-    """Project detail page."""
+    """项目详情页面"""
     try:
+        # 获取项目信息
         project = PaperProject.query.get(project_id)
         if not project:
-            return render_template('error.html', message=f"Project with ID {project_id} not found")
+            flash('Project not found', 'error')
+            return redirect(url_for('index'))
         
-        # Get all versions for this project
-        versions = PaperVersion.query.filter_by(project_id=project_id).order_by(PaperVersion.version_number.desc()).all()
+        # 获取论文版本
+        versions = PaperVersion.query.filter_by(project_id=project_id).order_by(PaperVersion.created_at.desc()).all()
         
-        # Determine if we have research results, draft, and review
-        research = next((v for v in versions if v.content_type == 'research'), None)
-        draft = next((v for v in versions if v.content_type == 'draft'), None)
-        review = next((v for v in versions if v.content_type == 'review'), None)
-        final = next((v for v in versions if v.content_type == 'final'), None)
+        # 获取当前草稿
+        draft = None
+        for version in versions:
+            if version.content_type == 'draft':
+                draft = version
+                break
+        
+        # 如果有草稿，确保图片目录已设置
+        if draft and 'figure' in draft.content.lower():
+            try:
+                # 尝试运行图片设置脚本，确保图片可以被正确显示
+                from utils.setup_figures import copy_figures
+                copy_figures('static/figures', 'figures')
+                app.logger.info(f"Copied figures for project {project_id}")
+            except Exception as e:
+                app.logger.error(f"Error setting up figures for project {project_id}: {str(e)}")
+        
+        # 获取研究内容
+        research = None
+        for version in versions:
+            if version.content_type == 'research':
+                research = version
+                break
         
         return render_template(
             'project_detail.html', 
             project=project, 
-            research=research,
+            versions=versions,
             draft=draft,
-            review=review,
-            final=final
+            research=research,
+            paper_types=get_paper_types_dict(),
+            languages=get_languages_dict()
         )
     except Exception as e:
-        logger.error(f"Error showing project detail: {str(e)}")
-        return render_template('error.html', message=f"Error: {str(e)}")
+        app.logger.error(f"Error getting project details: {str(e)}")
+        flash(f'Error: {str(e)}', 'error')
+        return redirect(url_for('index'))
+
+def get_paper_types_dict():
+    """获取论文类型字典"""
+    try:
+        from utils.paper_types import get_paper_types
+        return get_paper_types()
+    except ImportError:
+        return {"regular": {"name": "Regular Paper"}}
+
+def get_languages_dict():
+    """获取支持的语言字典"""
+    try:
+        from utils.paper_types import get_languages
+        return get_languages()
+    except ImportError:
+        return {"en": {"name": "English"}}
 
 @app.route('/api/projects', methods=['GET'])
 def api_get_projects():
@@ -667,115 +734,88 @@ def api_start_research(project_id):
 
 @app.route('/api/projects/<int:project_id>/start-writing', methods=['POST'])
 def api_start_writing(project_id):
-    """Start the writing phase for a project."""
+    """启动写作流程"""
     try:
-        project = PaperProject.query.get(project_id)
-        if not project:
-            return jsonify({"error": f"Project with ID {project_id} not found"}), 404
-        
-        # Check if project is already in writing phase
-        if project.status in ["writing"]:
-            logger.info(f"[Project {project_id}] Writing already in progress")
-            return jsonify({
-                "status": "in_progress",
-                "message": "Writing already in progress"
-            })
-        
-        # 检查是否已完成研究阶段
-        research_version = PaperVersion.query.filter_by(
-            project_id=project_id, 
-            content_type='research'
-        ).first()
-        
-        if not research_version:
-            return jsonify({
-                "error": "Research phase has not been completed for this project"
-            }), 400
-        
-        # 更新项目状态
-        project.status = "writing"
-        db.session.commit()
-        
-        # 记录活动
-        log_agent_activity(project_id, 'system', f'Starting writing phase for topic: {project.topic}')
-        
-        # 异步执行写作任务
-        # 在实际应用中应该使用Celery或其他异步任务队列
-        # 这里为了简化，直接在请求中执行
-        try:
+        with app.app_context():
+            # 获取项目信息
+            project = PaperProject.query.get(project_id)
+            if not project:
+                return jsonify({'error': 'Project not found'}), 404
+            
+            # 获取最新研究内容
+            research_version = get_latest_version(project_id, 'research')
+            if not research_version:
+                return jsonify({'error': 'No research found for this project'}), 400
+            
+            research_content = research_version.content if research_version else ""
+            
+            # 获取论文模板
+            try:
+                from utils.template_generator import generate_paper_template
+                template = generate_paper_template(
+                    project.topic, 
+                    paper_type_id=project.paper_type, 
+                    language_id=project.language
+                )
+                log_agent_activity(project_id, "system", "template_generated", 
+                                  {"paper_type": project.paper_type, "language": project.language})
+            except ImportError:
+                # 如果模板生成器不可用，使用简单模板
+                template = f"# {project.topic}\n\n## Abstract\n\n## Introduction\n\n## Methods\n\n## Results\n\n## Discussion\n\n## Conclusion\n\n## References\n\n"
+                log_agent_activity(project_id, "system", "using_default_template")
+            
             # 获取写作代理
             writing_agent = get_agent_for_project(project, 'writing')
+            if not writing_agent:
+                return jsonify({'error': 'Failed to initialize writing agent'}), 500
             
-            # 记录活动
-            log_agent_activity(project_id, 'writing', 'Initializing writing agent')
+            # 写作提示
+            prompt = f"""
+            You are an academic writing assistant. I want you to write a complete academic paper on the topic: "{project.topic}".
             
-            # 执行写作
-            log_agent_activity(project_id, 'writing', f'Writing paper on topic: {project.topic}')
-            result = writing_agent.process(project.topic, research_version.content)
+            Use the following research information:
+            {research_content}
             
-            # Check if writing is already in progress (our new lock mechanism)
-            if result.startswith("# Writing in Progress"):
-                logger.info(f"[Project {project_id}] Writing already in progress according to agent")
-                return jsonify({
-                    "status": "in_progress",
-                    "message": "Writing in progress"
-                })
+            Please follow this paper structure/template:
+            {template}
             
-            # 记录活动
-            log_agent_activity(project_id, 'writing', 'Writing completed successfully')
+            Additional guidelines:
+            1. Write in a formal academic style appropriate for {project.language}
+            2. Follow the structure exactly as provided
+            3. Include citations where appropriate
+            4. Create realistic and meaningful content based on the research
+            5. The final paper should be comprehensive and ready for review
+            6. Include placeholders for figures where appropriate (e.g., [Figure 1: Description])
             
-            # 将写作结果存储为一个版本
-            version = PaperVersion(
-                project_id=project_id,
-                version_number=1,
-                content_type='draft',
-                content=result
-            )
-            db.session.add(version)
+            Please provide the complete paper in Markdown format.
+            """
             
-            # 更新项目状态
-            project.status = "writing_complete"
+            # 启动写作任务
+            project.status = "writing"
             db.session.commit()
+            log_agent_activity(project_id, "writing", "writing_started")
             
-            # 添加一条成功消息
-            message = AgentMessage(
-                project_id=project_id,
-                agent_type='writing',
-                message_type='info',
-                message='Writing completed successfully'
-            )
-            db.session.add(message)
-            db.session.commit()
+            # 异步执行写作任务
+            def async_write():
+                try:
+                    draft = writing_agent.generate(prompt)
+                    save_version(project_id, 'draft', draft)
+                    project.status = "draft_completed"
+                    db.session.commit()
+                    log_agent_activity(project_id, "writing", "writing_completed")
+                except Exception as e:
+                    project.status = "writing_failed"
+                    db.session.commit()
+                    log_agent_activity(project_id, "writing", "writing_failed", {"error": str(e)})
+                    logger.error(f"Writing failed for project {project_id}: {str(e)}")
             
-            return jsonify({
-                "status": "success",
-                "message": "Writing completed successfully"
-            })
+            threading.Thread(target=async_write).start()
             
-        except Exception as e:
-            logger.error(f"Error during writing: {str(e)}")
-            
-            # 添加一条错误消息
-            message = AgentMessage(
-                project_id=project_id,
-                agent_type='writing',
-                message_type='error',
-                message=f'Error during writing: {str(e)}'
-            )
-            db.session.add(message)
-            
-            # 更新项目状态
-            project.status = "writing_failed"
-            db.session.commit()
-            
-            return jsonify({
-                "status": "error",
-                "error": str(e)
-            }), 500
-            
+            return jsonify({'status': 'success', 'message': 'Writing process started'})
+    
     except Exception as e:
         logger.error(f"Error starting writing: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/projects/<int:project_id>/start-review', methods=['POST'])
 def api_start_review(project_id):
@@ -982,7 +1022,6 @@ def api_start_interactive_multi_agent(project_id):
         add_agent_log(project_id, 'system', 'Starting interactive multi-agent process')
         
         # Start the multi-agent process in a background thread to not block the response
-        import threading
         thread = threading.Thread(target=run_interactive_multi_agent_process, args=(project_id,))
         thread.daemon = True
         thread.start()
@@ -1468,6 +1507,38 @@ def api_export_paper(project_id):
     except Exception as e:
         logger.error(f"Error exporting paper: {str(e)}")
         return jsonify({'status': 'error', 'error': str(e)}), 500
+
+@app.route('/api/paper-types', methods=['GET'])
+def api_get_paper_types():
+    """获取所有论文类型"""
+    try:
+        from utils.paper_types import get_paper_types
+        return jsonify(get_paper_types())
+    except ImportError:
+        # Fallback if module not found
+        default_types = {
+            "regular": {
+                "name": "Regular Research Paper",
+                "description": "A full-length research paper presenting original research."
+            }
+        }
+        return jsonify(default_types)
+
+@app.route('/api/languages', methods=['GET'])
+def api_get_languages():
+    """获取所有支持的语言"""
+    try:
+        from utils.paper_types import get_languages
+        return jsonify(get_languages())
+    except ImportError:
+        # Fallback if module not found
+        default_languages = {
+            "en": {
+                "name": "English",
+                "description": "Standard academic English"
+            }
+        }
+        return jsonify(default_languages)
 
 if __name__ == "__main__":
     app.run(debug=True, host="127.0.0.1", port=5000)
